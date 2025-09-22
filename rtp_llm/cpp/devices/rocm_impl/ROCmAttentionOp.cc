@@ -743,6 +743,8 @@ AttentionModuleOutput ROCmDevice::contextAttention(const AttentionModuleParams& 
         writeCacheStore(params);
     }
 
+    computeInsertedMoE();
+
     fmha_runner_->setup(
         datatype, params.configs.mask_type, head_num, kv_head_num, size_per_head, params.configs.q_scaling);
     // auto seq_len_round_32 = (seq_len + 31) / 32 * 32;
@@ -1091,6 +1093,7 @@ AttentionModuleOutput ROCmDevice::decoderSelfAttention(const AttentionModulePara
                                              store_cache,
                                              stream_);
             check_cuda_error();
+            computeInsertedMoE();
             DEBUG_PRINT_PARAMS(params, this, "decode_writeKVCache", q_output);
             runAiterPA(params, this, *q_output);
             check_cuda_error();
