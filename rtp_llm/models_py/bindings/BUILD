@@ -4,6 +4,7 @@ load("//bazel:arch_select.bzl", "torch_deps")
 cc_library(
     name = "op_defs",
     hdrs = [
+        "ParamsBase.h",
         "OpDefs.h",
         "OpDefsUtils.h",
         "ParamsBase.h",
