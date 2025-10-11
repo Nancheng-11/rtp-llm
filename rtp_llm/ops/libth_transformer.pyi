@@ -1025,14 +1025,6 @@ class KVCache:
     v_scale_base: torch.Tensor
     def get_layer_cache(self, idx: int) -> KVCache: ...
 
-class PyMlaInputs:
-    max_prefix_length: int
-    context_batch_size: int
-    decoder_batch_size: int
-    context_token_num: int
-    max_context_seq_len: int
-    def __init__(self) -> None: ...
-
 class PyCacheStoreInputs:
     def __init__(self) -> None: ...
 
