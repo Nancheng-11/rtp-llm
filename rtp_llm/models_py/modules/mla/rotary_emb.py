@@ -6,7 +6,6 @@ from flashinfer.rope import (
     _apply_rope_pos_ids_cos_sin_cache as _apply_rope_pos_ids_cos_sin_cache,
 )
 
-from rtp_llm.models_py.modules.flashinfer_mla import fill_flash_params
 from rtp_llm.ops import KVCache, PyAttentionInputs
 from rtp_llm.ops import rtp_llm_ops
 
@@ -33,8 +32,12 @@ class MlaRotaryEmbeddingOp(object):
         self.token_per_block = token_per_block
 
     def prepare(self, attention_inputs: PyAttentionInputs):
-        return rtp_llm_ops.fill_flash_params(
-            self.token_per_block, attention_inputs, self.cos_sin_cache.device
+        return rtp_llm_ops.FlashInferMlaAttnParams().fill_mla_params(
+            attention_inputs.prefix_lengths,
+            attention_inputs.sequence_lengths,
+            attention_inputs.input_lengths,
+            attention_inputs.kv_cache_block_id_host,
+            self.token_per_block,
         )
 
     def forward(
@@ -45,14 +48,12 @@ class MlaRotaryEmbeddingOp(object):
         rope_params: Any,
         kv_cache: Optional[KVCache] = None,
     ):
-        query_out = torch.empty_like(query)
-        key_out = torch.empty_like(key)
 
         _apply_rope_pos_ids_cos_sin_cache(
-            query,
-            key.unsqueeze(1),
-            query_out,
-            key_out.unsqueeze(1),
+            q=query,
+            k=key.unsqueeze(1),
+            q_rope=query,
+            k_rope=key.unsqueeze(1),
             cos_sin_cache=self.cos_sin_cache,
             pos_ids=rope_params.positions,
             interleave=self.is_neox_style,
@@ -65,7 +66,7 @@ class MlaRotaryEmbeddingOp(object):
 
             append_paged_mla_kv_cache(
                 append_ckv_t,
-                key_out,
+                key,
                 rope_params.batch_indice,
                 rope_params.positions,
                 k_cache,
@@ -74,5 +75,3 @@ class MlaRotaryEmbeddingOp(object):
                 rope_params.page_indptr,
                 rope_params.paged_kv_last_page_len,
             )
-
-        return query_out, key_out

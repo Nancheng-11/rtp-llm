@@ -4,18 +4,20 @@
 #include <vector>
 #include <memory>
 #include "rtp_llm/models_py/bindings/OpDefs.h"
+#include "rtp_llm/models_py/bindings/MlaParamsBase.h"
+
 using namespace torch_ext;
 
 namespace rtp_llm {
 
-/**
- * @param page_size The size of each page in the KV cache
- * @param attention_inputs The attention inputs containing sequence information
- * @param device The torch device to create tensors on
- * @return FlashInferMlaParams structure containing all the computed parameters
- */
-FlashInferMlaParams FillFlashInferMlaParams(int page_size, 
-                                           const PyAttentionInputs& attention_inputs, 
-                                           const torch::Device& device);
+class FlashInferMlaAttnParams: public MlaParamsBase {
+public:
+    MlaParams fillParams(torch::Tensor t_prefix_lengths,
+                         torch::Tensor t_sequence_lengths,
+                         torch::Tensor t_input_lengths,
+                         torch::Tensor t_kv_cache_block_id_host,
+                         int           seq_size_per_block);
+};
+void registerPyFlashInferMlaParams(pybind11::module& m);
 
 }

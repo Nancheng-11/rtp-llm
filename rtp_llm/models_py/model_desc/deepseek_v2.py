@@ -7,116 +7,35 @@ from rtp_llm.config.gpt_init_model_parameters import GptInitModelParameters
 from rtp_llm.model_loader.model_weight_info import ModelWeights
 from rtp_llm.models_py.model_desc.module_base import GptModelBase
 from rtp_llm.models_py.modules.embedding import Embedding
-from rtp_llm.models_py.modules.ep.model_moe_sparse_block import ModelMoESparseBlock
 from rtp_llm.models_py.modules.fmha import FMHAImplBase
-from rtp_llm.models_py.modules.linear_factory import LinearFactory
 from rtp_llm.models_py.modules.mlp import FusedSiluActDenseMLP
-from rtp_llm.models_py.modules.norm import RMSNorm, RMSNormTorch
+from rtp_llm.models_py.modules.mla import DeepSeekV2Attention
+from rtp_llm.models_py.modules.ep.layers import FusedMoE
+from rtp_llm.models_py.modules.linear_factory import LinearFactory
+from rtp_llm.models_py.modules.norm import RMSNorm
 from rtp_llm.ops import KVCache, PyAttentionInputs, PyModelInputs, PyModelOutputs
 from rtp_llm.utils.model_weight import W
 
-
-class DeepSeekV2Attention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
-
+class DeepSeekV2MoeLayer(nn.Module):
     def __init__(
-        self,
-        config: GptInitModelParameters,
-        weights: Dict[str, torch.Tensor],
-        layer_idx: int,
+        self, config: GptInitModelParameters, weights: Dict[str, torch.Tensor]
     ):
         super().__init__()
         self.config = config
-        self.num_heads = self.config.head_num
-        self.qk_nope_head_dim = self.config.nope_head_dim
-        self.qk_rope_head_dim = self.config.rope_head_dim
-        self.q_head_dim = self.qk_nope_head_dim + self.qk_rope_head_dim
-        self.kv_lora_rank = self.config.kv_lora_rank
-        self.v_head_dim = self.config.v_head_dim
-        self.q_lora_rank = self.config.q_lora_rank
-        self.softmax_scale = self.q_head_dim ** (-0.5)
-        self.layer_idx = layer_idx
-        self.token_per_block = self.config.seq_size_per_block
+        self.gate = LinearFactory.create_linear_from_weights(
+                weights, W.moe_gate, None, None, config
+            )
+        self.fused_moe: FusedMoE = FusedMoE(config, weights, layer_id=0)
 
-        if self.q_lora_rank > 0:
-            self.fused_qkv_a_proj = LinearFactory.create_linear_from_weights(
-                weights, W.mla_fusedqkrope_w, W.mla_fusedqkrope_s, None, config
-            )
-            self.q_a_layernorm = RMSNorm(
-                weights.get(W.mla_q_a_ln_gamma, None), eps=config.layernorm_eps
-            )
-            self.q_b_proj = LinearFactory.create_linear_from_weights(
-                weights, W.mla_q_b_w, W.mla_q_b_s, None, config
-            )
-        else:
-            self.fused_qkv_proj = LinearFactory.create_linear_from_weights(
-                weights,
-                W.mla_fusedqkrope_no_lora_w,
-                W.mla_fusedqkrope_no_lora_s,
-                None,
-                config,
-            )
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """Forward pass for FusedMoE implementation."""
 
-        self.kv_a_layernorm = RMSNorm(
-            weights.get(W.mla_kv_a_ln_gamma, None), eps=config.layernorm_eps
+        router_logits = self.gate(hidden_states)
+
+        return self.fused_moe(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
         )
-
-        self.o_proj = LinearFactory.create_linear_from_weights(
-            weights, W.attn_o_w, W.attn_o_s, W.attn_o_b, config
-        )
-
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        fmha_impl: FMHAImplBase,
-        kv_cache: Optional[KVCache] = None,
-    ) -> torch.Tensor:
-        input_shape = hidden_states.shape[:-1]
-
-        if self.q_lora_rank > 0:
-            fused_qkv = self.fused_qkv_a_proj(hidden_states)
-            kv_offset = self.config.q_lora_rank
-            q, compressed_kv = torch.split(
-                fused_qkv,
-                [
-                    kv_offset,
-                    self.kv_lora_rank + self.qk_rope_head_dim,
-                ],
-                dim=-1,
-            )
-            q = self.q_a_layernorm(q.contiguous())
-            q = self.q_b_proj(fused_qkv)
-        else:
-            fused_qkv = self.fused_qkv_proj(hidden_states)
-            kv_offset = self.config.head_num * self.config.size_per_head
-            q, compressed_kv = torch.split(
-                fused_qkv,
-                [
-                    kv_offset,
-                    self.kv_lora_rank + self.qk_rope_head_dim,
-                ],
-                dim=-1,
-            )
-
-        q_view = q.reshape(-1, self.num_heads, self.q_head_dim)
-
-        q_nope, q_pe = torch.split(
-            q_view, [self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1
-        )
-        compressed_kv, k_pe = torch.split(
-            compressed_kv, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1
-        )
-
-        compressed_kv = self.kv_a_layernorm(compressed_kv.contiguous())
-
-        attn_output = fmha_impl.forward(
-            q_nope, q_pe, compressed_kv, k_pe, kv_cache, self.layer_idx
-        )
-
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = self.o_proj(attn_output)
-        return attn_output
-
 
 class DeepSeekV2DecoderLayer(nn.Module):
     def __init__(
@@ -134,11 +53,10 @@ class DeepSeekV2DecoderLayer(nn.Module):
             self.is_dense_layer = True
         else:
             self.is_dense_layer = False
-            self.moe_mlp = ModelMoESparseBlock(config, weights)
+            self.moe_mlp = DeepSeekV2MoeLayer(config, weights)
         self.add_shared_expert = config.moe_style == 2
 
         if self.add_shared_expert:
-            config.activation_type = "SiGLU"
             self.shared_mlp = FusedSiluActDenseMLP(config, weights)
 
         self.input_layernorm = RMSNorm(
@@ -168,7 +86,7 @@ class DeepSeekV2DecoderLayer(nn.Module):
         if self.is_dense_layer:
             hidden_states = self.shared_mlp(hidden_states)
         else:
-            experts_output, _router_logits = self.moe_mlp(hidden_states)
+            experts_output = self.moe_mlp(hidden_states)
             if self.add_shared_expert:
                 shared_mlp_output = self.shared_mlp(hidden_states)
                 hidden_states = experts_output + shared_mlp_output
@@ -206,7 +124,7 @@ class DeepSeekV2Model(GptModelBase):
         hidden_states = inputs_embeds
         attention_inputs: PyAttentionInputs = inputs.attention_inputs
 
-        fmha_impl = self.get_mla_impl(attention_inputs, use_torch=True)
+        fmha_impl = self.get_mla_impl(attention_inputs)
 
         for i, decoder_layer in enumerate(self.layers[: self.layer_num]):
             hidden_states = decoder_layer(

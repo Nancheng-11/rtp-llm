@@ -23,8 +23,7 @@ __all__ = [
     "fused_add_rmsnorm",
     "fused_qk_rmsnorm",
     "write_cache_store",
-    "fill_flash_params",
-    "FlashInferMlaParams",
+    "FlashInferMlaAttnParams",
     "layernorm",
     "rmsnorm",
     "silu_and_mul",
@@ -33,7 +32,7 @@ __all__ = [
 class FlashInferAttnParams:
     def __init__(self) -> None: ...
 
-class FlashInferMlaParams:
+class FlashInferMlaAttnParams:
     def __init__(self) -> None: ...
 
 class FlashInferOp:
@@ -170,15 +169,6 @@ def write_cache_store(
 ) -> None:
     """
     WriteCacheStoreOp kernel
-    """
-
-def fill_flash_params(
-    page_size: int,
-    attention_inputs: torch.Tensor,
-    device: torch.device,
-) -> FlashInferMlaParams:
-    """
-    FillFlashInferMlaParams
     """
 
 def layernorm(
