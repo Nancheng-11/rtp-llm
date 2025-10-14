@@ -19,13 +19,6 @@ using namespace rtp_llm;
 namespace torch_ext {
 
 void registerBasicCudaOps(py::module& rtp_ops_m) {
-    rtp_ops_m.def("fill_flash_params",
-                  &FillFlashInferMlaParams,
-                  "FillFlashInferMlaParams",
-                  py::arg("page_size"),
-                  py::arg("attention_inputs"),
-                  py::arg("device"));
-
     rtp_ops_m.def("write_cache_store",
                   &WriteCacheStoreOp,
                   "WriteCacheStoreOp kernel",

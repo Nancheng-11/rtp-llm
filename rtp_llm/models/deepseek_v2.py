@@ -518,7 +518,8 @@ class DeepSeekV2(BaseModel):
             norm_type="rmsnorm",
             has_post_decoder_layernorm=True,
         )
-        config.activation_type = "gated-silu"
+        # config.activation_type = "gated-silu"
+        config.activation_type = "SiGLU"
         DeepSeekV2._from_hf(config, ckpt_path)
         return config
 

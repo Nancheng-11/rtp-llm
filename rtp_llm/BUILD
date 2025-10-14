@@ -97,7 +97,7 @@ requirement([
     "portalocker",
     "concurrent_log_handler",
     "aiter",
-    "flashinfer-python==0.2.5",
+    "flashinfer-python",
 ] + tensorrt)
 
 filegroup(

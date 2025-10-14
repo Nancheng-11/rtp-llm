@@ -79,7 +79,7 @@ class GptModelBase(nn.Module):
         raise NotImplementedError("forward method must be implemented in subclass")
 
     def get_mla_impl(
-        self, attn_inputs: PyAttentionInputs, use_torch=False
+        self, attn_inputs: PyAttentionInputs
     ) -> FMHAImplBase:
         mha_impls = PREFILL_MLA_IMPS if attn_inputs.is_prefill else DECODE_MLA_IMPS
         for fmha_impl in mha_impls:
@@ -89,7 +89,6 @@ class GptModelBase(nn.Module):
                 attn_inputs,
                 self.weight.weights,
                 cos_sin_cache,
-                use_torch=use_torch,
             )
             if impl.support():
                 return impl

@@ -7,8 +7,7 @@
 #include "rtp_llm/models_py/bindings/ParamsBase.h"
 #include "rtp_llm/cpp/utils/Logger.h"
 namespace torch_ext {
-
-struct FlashInferMlaParams {
+struct MlaParams {
     torch::Tensor batch_indice;
     torch::Tensor positions;
     torch::Tensor paged_kv_last_page_len;
