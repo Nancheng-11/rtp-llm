@@ -1,10 +1,19 @@
 from typing import Any, Optional
-
+import logging
 import torch
-from flashinfer.page import append_paged_mla_kv_cache as append_paged_mla_kv_cache
-from flashinfer.rope import (
-    _apply_rope_pos_ids_cos_sin_cache as _apply_rope_pos_ids_cos_sin_cache,
-)
+import rtp_llm.models_py.modules.utils as utils
+
+try:
+    from flashinfer.page import append_paged_mla_kv_cache as append_paged_mla_kv_cache
+    from flashinfer.rope import (
+        _apply_rope_pos_ids_cos_sin_cache as _apply_rope_pos_ids_cos_sin_cache,
+    )
+    logging.info("mla rotary_emb import from flashinfer.page and rope succeed!")
+except ImportError:
+    append_paged_mla_kv_cache = None
+    _apply_rope_pos_ids_cos_sin_cache = None
+    logging.warning("can't import flashinfer, only support cuda12+!")
+
 
 from rtp_llm.ops import KVCache, PyAttentionInputs
 from rtp_llm.ops import rtp_llm_ops
