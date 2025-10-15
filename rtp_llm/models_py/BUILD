@@ -33,9 +33,9 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-requirement([
-    "flashinfer-python",
-])
+# flashinfer-python is only available for CUDA12
+flashinfer = ["flashinfer_python"]
+requirement(flashinfer)
 
 py_library(
     name = "modules",
@@ -47,8 +47,10 @@ py_library(
         ":utils",
         ":kernels",
         ":distributed",
-        ":flashinfer-python",
-    ],
+    ] + select({
+        "@//:using_cuda12": flashinfer,
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 

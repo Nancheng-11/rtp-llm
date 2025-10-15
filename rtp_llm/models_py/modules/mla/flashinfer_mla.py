@@ -1,7 +1,12 @@
-from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
+import logging
 
-import flashinfer
+try:
+    import flashinfer
+except ImportError:
+    logging.warning("can't import flashinfer, only support cuda12+!")
+
+# import flashinfer
 import torch
 import torch.nn.functional as F
 
