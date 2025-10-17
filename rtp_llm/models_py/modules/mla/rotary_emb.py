@@ -17,6 +17,7 @@ except ImportError:
 
 from rtp_llm.ops import KVCache, PyAttentionInputs
 from rtp_llm.ops import rtp_llm_ops
+from rtp_llm.models_py.modules.mla.flashinfer_mla import check_attention_inputs
 
 class MlaRotaryEmbeddingOp(object):
     """Original rotary positional embedding."""
@@ -41,6 +42,7 @@ class MlaRotaryEmbeddingOp(object):
         self.token_per_block = token_per_block
 
     def prepare(self, attention_inputs: PyAttentionInputs):
+        check_attention_inputs(attention_inputs)
         return rtp_llm_ops.FlashInferMlaAttnParams().fill_mla_params(
             attention_inputs.prefix_lengths,
             attention_inputs.sequence_lengths,

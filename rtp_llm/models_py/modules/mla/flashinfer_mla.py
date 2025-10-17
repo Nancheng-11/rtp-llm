@@ -21,6 +21,18 @@ from rtp_llm.models_py.modules.linear_factory import LinearFactory
 from rtp_llm.utils.model_weight import W
 from rtp_llm.ops import rtp_llm_ops
 
+import subprocess
+ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
+print("Flashinfer 系统 ninja 可执行文件版本:", ver)
+
+def check_attention_inputs(attention_inputs: PyAttentionInputs):
+    if attention_inputs.prefix_lengths is None:
+        attention_inputs.prefix_lengths = torch.zeros(0, dtype=torch.int32, device=attention_inputs.input_lengths.device)
+    if attention_inputs.sequence_lengths is None:
+        attention_inputs.sequence_lengths = torch.zeros(0, dtype=torch.int32, device=attention_inputs.input_lengths.device)
+    if attention_inputs.kv_cache_block_id_host is None:
+        attention_inputs.kv_cache_block_id_host = torch.zeros(0, dtype=torch.int32, device=attention_inputs.input_lengths.device)
+
 class MlaFlashInferPrefillOp(object):
     def __init__(
         self,
@@ -62,6 +74,7 @@ class MlaFlashInferPrefillOp(object):
         return self.use_mla and attention_inputs.is_prefill
 
     def prepare(self, attention_inputs: PyAttentionInputs):
+        check_attention_inputs(attention_inputs)
         return rtp_llm_ops.FlashInferMlaAttnParams().fill_mla_params(
             attention_inputs.prefix_lengths,
             attention_inputs.sequence_lengths,
@@ -156,6 +169,7 @@ class MlaFlashInferDecodeOp(object):
         return self.use_mla and not attention_inputs.is_prefill
 
     def prepare(self, attention_inputs: PyAttentionInputs):
+        check_attention_inputs(attention_inputs)
         return rtp_llm_ops.FlashInferMlaAttnParams().fill_mla_params(
             attention_inputs.prefix_lengths,
             attention_inputs.sequence_lengths,

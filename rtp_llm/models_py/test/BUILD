@@ -361,3 +361,20 @@ py_test (
     exec_properties = {'gpu':'H20'},
 )
 
+
+py_test (
+    name = "mla_attention_test",
+    srcs = ["mla_attention_test.py"],
+    deps = [
+        "//rtp_llm/models_py:models",
+        "//rtp_llm/models_py:modules",
+        "//rtp_llm:config",
+        "//rtp_llm:utils",
+        "//rtp_llm:testlib",
+        "//rtp_llm/test/model_test/test_util:test_util",
+        "//rtp_llm:models",
+    ],
+    env = test_envs,
+    tags = ["open_skip", "H20"],
+    exec_properties = {'gpu':'H20'},
+)
