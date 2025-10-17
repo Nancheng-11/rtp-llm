@@ -1,6 +1,7 @@
 from rtp_llm.models_py.modules.mla.flashinfer_mla import (
     MlaFlashInferPrefillOp,
-    MlaFlashInferDecodeOp
+    MlaFlashInferDecodeOp,
+    TrtV2PrefillAttentionOp,
 )
 
 from rtp_llm.models_py.modules.mla.rotary_emb import MlaRotaryEmbeddingOp

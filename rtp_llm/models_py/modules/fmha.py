@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from rtp_llm.models_py.modules.mla import (
     MlaFlashInferDecodeOp,
     MlaFlashInferPrefillOp,
+    TrtV2PrefillAttentionOp,
 )
 from rtp_llm.models_py.modules.mla import MlaRotaryEmbeddingOp
 from rtp_llm.utils.model_weight import W
@@ -163,6 +164,15 @@ try:
                     config.use_mla,
                     weights,
                 ),
+                # TrtV2PrefillAttentionOp(
+                #     config,
+                #     config.head_num,
+                #     config.kv_lora_rank,
+                #     config.rope_head_dim,
+                #     config.nope_head_dim,
+                #     config.use_mla,
+                #     weights,
+                # ),
                 MlaRotaryEmbeddingOp(
                     head_size=config.nope_head_dim,
                     cos_sin_cache=cos_sin_cache,
@@ -198,7 +208,6 @@ try:
                 and self.write_cache_store_impl is not None
             ):
                 self.write_cache_store_impl(kv_cache)
-
             assert self.fmha_impl is not None
             res = self.fmha_impl.forward(
                 q, compressed_kv, k_pe, self.fmha_params, layer_id

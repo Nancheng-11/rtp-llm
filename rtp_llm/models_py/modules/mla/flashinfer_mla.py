@@ -11,6 +11,7 @@ except ImportError:
 
 # import flashinfer
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 # from rtp_llm.config.gpt_init_model_parameters import GptInitModelParameters
@@ -229,3 +230,153 @@ class MlaFlashInferDecodeOp(object):
         attn_bmm_output = torch.bmm(attn_output.transpose(0, 1), v_weight)
         attn_bmm_output = attn_bmm_output.transpose(0, 1)
         return attn_bmm_output
+
+class TrtV2PrefillAttentionOp(object):
+    def __init__(
+        self,
+        config: GptInitModelParameters,
+        num_heads: int,
+        kv_lora_rank: int,
+        qk_rope_head_dim: int,
+        qk_nope_head_dim: int,
+        use_mla: bool,
+        weights: List[Dict[str, torch.Tensor]] | None,
+    ):
+        super().__init__()
+        self.num_heads = num_heads
+        self.kv_lora_rank = kv_lora_rank
+        self.qk_rope_head_dim = qk_rope_head_dim
+        self.qk_nope_head_dim = qk_nope_head_dim
+        self.scale = (self.qk_nope_head_dim + self.qk_rope_head_dim) ** -0.5
+        self.config = config
+        self.weights = weights
+        self.use_mla = use_mla
+        from libth_transformer.rtp_llm_ops import TRTAttnOp
+        self.fmha_impl = TRTAttnOp(self.config)
+    
+    def support(self, attention_inputs: PyAttentionInputs):
+        return self.use_mla and attention_inputs.is_prefill and self.fmha_impl.support(attention_inputs)
+
+    def prepare(self, attention_inputs: PyAttentionInputs):
+        return self.fmha_impl.prepare(attention_inputs)
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        compressed_kv: torch.Tensor,
+        k_pe: torch.Tensor,
+        fmha_params: Any,
+        layer_id: int,
+    ) -> torch.Tensor:
+
+        k_pe = k_pe.view(-1, 1, self.qk_rope_head_dim)
+        self.k_nope_proj = LinearFactory.create_linear_from_weights(
+            self.weights[layer_id], W.mla_k_nope_w, W.mla_k_nope_s, None, self.config
+        )
+
+        self.v_proj = LinearFactory.create_linear_from_weights(
+            self.weights[layer_id], W.mla_v_w, W.mla_v_s, None, self.config
+        )
+
+        k_nope = self.k_nope_proj(compressed_kv)
+        value_states = self.v_proj(compressed_kv)
+
+        k_nope = k_nope.view(-1, self.num_heads, self.qk_nope_head_dim)
+        value_states = value_states.view(-1, self.num_heads, self.qk_nope_head_dim)
+
+        k = k_pe.new_empty(
+            k_pe.size(0), self.num_heads, self.qk_rope_head_dim + self.qk_nope_head_dim
+        )
+        k[..., : self.qk_nope_head_dim] = k_nope
+        k[..., self.qk_nope_head_dim :] = k_pe
+
+        pad_len = self.qk_rope_head_dim
+        value_states = F.pad(value_states, (0, pad_len))
+
+        fmha_input = torch.stack([q, k, value_states], dim=1)
+        fmha_input = fmha_input.reshape(q.shape[0], -1)
+        kv_cache: Optional[KVCache] = None
+        attn_output = self.fmha_impl.forward(fmha_input, kv_cache, fmha_params)
+        attn_output = attn_output.view(
+            q.shape[0], self.num_heads, self.qk_nope_head_dim + self.qk_rope_head_dim
+        )
+        attn_output, _ = torch.split(
+            attn_output,
+            [
+                self.qk_nope_head_dim,
+                self.qk_rope_head_dim,
+            ],
+            dim=-1,
+        )
+        return attn_output
+
+'''
+class TrtV2PrefillAttention(nn.Module):
+    def __init__(
+        self,
+        config: GptInitModelParameters,
+        num_heads: int,
+        kv_lora_rank: int,
+        qk_rope_head_dim: int,
+        qk_nope_head_dim: int,
+        k_nope_weight: torch.Tensor | None,
+        v_weight: torch.Tensor | None,
+    ):
+        super().__init__()
+        if k_nope_weight is None or v_weight is None:
+            raise Exception(
+                f"MlaAbsorbAttention need v_weight and k_weight but got none"
+            )
+        self.num_heads = num_heads
+        self.kv_lora_rank = kv_lora_rank
+        self.qk_rope_head_dim = qk_rope_head_dim
+        self.qk_nope_head_dim = qk_nope_head_dim
+        self.scale = (self.qk_nope_head_dim + self.qk_rope_head_dim) ** -0.5
+        self.v_weight = v_weight
+        self.k_nope_weight = k_nope_weight
+        self.config = config
+    def forward(
+        self,
+        q_nope: torch.Tensor,
+        q_pe: torch.Tensor,
+        compressed_kv: torch.Tensor,
+        k_pe: torch.Tensor,
+        kv_cache: Optional[KVCache],
+        attention_inputs: PyAttentionInputs,
+    ) -> torch.Tensor:
+        q_nope = q_nope.view(-1, self.num_heads, self.qk_nope_head_dim)
+        q_pe = q_pe.view(-1, self.num_heads, self.qk_rope_head_dim)
+        q = torch.cat([q_nope, q_pe], dim=-1)
+        k_pe = k_pe.view(-1, 1, self.qk_rope_head_dim)
+        k_nope = F.linear(compressed_kv, self.k_nope_weight.transpose(0, 1), None)
+        k_nope = k_nope.view(-1, self.num_heads, self.qk_nope_head_dim)
+        k = k_pe.new_empty(
+            k_pe.size(0), self.num_heads, self.qk_rope_head_dim + self.qk_nope_head_dim
+        )
+        k[..., : self.qk_nope_head_dim] = k_nope
+        k[..., self.qk_nope_head_dim :] = k_pe
+        value_states = F.linear(compressed_kv, self.v_weight.transpose(0, 1), None)
+        value_states = value_states.view(-1, self.num_heads, self.qk_nope_head_dim)
+        pad_len = self.qk_rope_head_dim
+        value_states = F.pad(value_states, (0, pad_len))
+        from libth_transformer.rtp_llm_ops import TRTAttnOp
+        self.fmha_impl = TRTAttnOp(self.config)
+        self.support_: bool = self.fmha_impl.support(attention_inputs)
+        if self.support_:
+            self.fmha_params = self.fmha_impl.prepare(attention_inputs)
+        fmha_input = torch.stack([q, k, value_states], dim=1)
+        fmha_input = fmha_input.reshape(q.shape[0], -1)
+        attn_output = self.fmha_impl.forward(fmha_input, kv_cache, self.fmha_params)
+        attn_output = attn_output.view(
+            q.shape[0], self.num_heads, self.qk_nope_head_dim + self.qk_rope_head_dim
+        )
+        attn_output, _ = torch.split(
+            attn_output,
+            [
+                self.qk_nope_head_dim,
+                self.qk_rope_head_dim,
+            ],
+            dim=-1,
+        )
+        return attn_output
+'''
