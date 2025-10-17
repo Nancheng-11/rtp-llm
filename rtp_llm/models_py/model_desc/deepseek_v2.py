@@ -18,6 +18,22 @@ from rtp_llm.models_py.modules.norm import RMSNorm
 from rtp_llm.ops import KVCache, PyAttentionInputs, PyModelInputs, PyModelOutputs
 from rtp_llm.utils.model_weight import W
 
+class DeepSeekV2NormalMoeLayer(nn.Module):
+    def __init__(self, config: GptInitModelParameters, weights: Dict[str, torch.Tensor]):
+        super().__init__()
+        self.config = config
+        self.top_k = config.moe_k
+        self.gate = LinearFactory.create_linear_from_weights(
+            weights, W.moe_gate, None, None, config
+        )
+        self.fused_moe = FusedMoE(config, weights, layer_id=0)
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        router_logits = self.gate(hidden_states)
+        return self.fused_moe(
+            hidden_states=hidden_states,
+            router_logits=router_logits,
+        )
+
 class DeepSeekV2MoeLayer(nn.Module):
     def __init__(
         self, config: GptInitModelParameters, weights: Dict[str, torch.Tensor]
@@ -112,7 +128,7 @@ class DeepSeekV2DecoderLayer(nn.Module):
             self.is_dense_layer = True
         else:
             self.is_dense_layer = False
-            self.moe_mlp = DeepSeekV2MoeLayer(config, weights)
+            self.moe_mlp = DeepSeekV2NormalMoeLayer(config, weights)
         self.add_shared_expert = config.moe_style == 2
 
         if self.add_shared_expert:
@@ -158,6 +174,7 @@ class DeepSeekV2DecoderLayer(nn.Module):
 
 class DeepSeekV2Model(GptModelBase):
     def __init__(self, config: GptInitModelParameters, weights: ModelWeights):
+        config.head_num = config.head_num // config.tp_size
         super().__init__(config, weights)
         self.layer_num = config.layer_num
         self.vocab_size = config.vocab_size

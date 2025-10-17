@@ -4,6 +4,7 @@ import torch
 from torch import nn
 
 from rtp_llm.config.gpt_init_model_parameters import GptInitModelParameters
+from rtp_llm.distribute.collective import Group, all_reduce
 from rtp_llm.models_py.modules.linear_factory import LinearFactory
 from rtp_llm.models_py.modules.norm import RMSNorm
 from rtp_llm.ops import KVCache
@@ -65,7 +66,6 @@ class DeepSeekV2Attention(nn.Module):
         kv_cache: Optional[KVCache] = None,
     ) -> torch.Tensor:
         input_shape = hidden_states.shape[:-1]
-
         if self.q_lora_rank > 0:
             fused_qkv = self.fused_qkv_a_proj(hidden_states)
             kv_offset = self.config.q_lora_rank
@@ -81,7 +81,7 @@ class DeepSeekV2Attention(nn.Module):
             q = self.q_b_proj(fused_qkv)
         else:
             fused_qkv = self.fused_qkv_proj(hidden_states)
-            kv_offset = self.config.head_num * self.config.size_per_head
+            kv_offset = self.num_heads * self.config.size_per_head
             q, compressed_kv = torch.split(
                 fused_qkv,
                 [
@@ -104,4 +104,6 @@ class DeepSeekV2Attention(nn.Module):
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
+        if self.config.tp_size > 1:
+            attn_output = all_reduce(attn_output, group=Group.TP)
         return attn_output

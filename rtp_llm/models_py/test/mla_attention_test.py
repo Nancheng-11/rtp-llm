@@ -20,9 +20,13 @@ from rtp_llm.models.rotary_embedding.deepseek_rotary_embedding import (
     DeepseekV3YarnRotaryEmbedding,
 )
 from rtp_llm.ops import PyAttentionInputs, KVCache
-import subprocess
-ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
-print("mla attn test 系统 ninja 可执行文件版本:", ver)
+
+try:
+    import subprocess
+    ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
+    print("Flashinfer 系统 ninja 可执行文件版本:", ver)
+except ImportError:
+    print("no ninja!")
 
 def set_seed(seed: int):
     random.seed(seed)

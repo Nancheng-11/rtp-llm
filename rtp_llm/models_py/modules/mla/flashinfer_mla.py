@@ -21,9 +21,12 @@ from rtp_llm.models_py.modules.linear_factory import LinearFactory
 from rtp_llm.utils.model_weight import W
 from rtp_llm.ops import rtp_llm_ops
 
-import subprocess
-ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
-print("Flashinfer 系统 ninja 可执行文件版本:", ver)
+try:
+    import subprocess
+    ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
+    print("Flashinfer 系统 ninja 可执行文件版本:", ver)
+except ImportError:
+    print("no ninja!")
 
 def check_attention_inputs(attention_inputs: PyAttentionInputs):
     if attention_inputs.prefix_lengths is None:
