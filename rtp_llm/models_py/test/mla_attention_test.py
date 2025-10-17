@@ -25,8 +25,8 @@ try:
     import subprocess
     ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
     print("Flashinfer 系统 ninja 可执行文件版本:", ver)
-except ImportError:
-    print("no ninja!")
+except (ImportError, subprocess.CalledProcessError, FileNotFoundError, PermissionError) as e:
+    print(f"Ninja not available: {type(e).__name__}: {e}")
 
 def set_seed(seed: int):
     random.seed(seed)

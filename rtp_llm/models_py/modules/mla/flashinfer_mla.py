@@ -25,16 +25,22 @@ try:
     import subprocess
     ver = subprocess.check_output(["ninja", "--version"], text=True).strip()
     print("Flashinfer 系统 ninja 可执行文件版本:", ver)
-except ImportError:
-    print("no ninja!")
+except (ImportError, subprocess.CalledProcessError, FileNotFoundError, PermissionError) as e:
+    print(f"Ninja not available: {type(e).__name__}: {e}")
 
-def check_attention_inputs(attention_inputs: PyAttentionInputs):
-    if attention_inputs.prefix_lengths is None:
-        attention_inputs.prefix_lengths = torch.zeros(0, dtype=torch.int32, device=attention_inputs.input_lengths.device)
-    if attention_inputs.sequence_lengths is None:
-        attention_inputs.sequence_lengths = torch.zeros(0, dtype=torch.int32, device=attention_inputs.input_lengths.device)
-    if attention_inputs.kv_cache_block_id_host is None:
-        attention_inputs.kv_cache_block_id_host = torch.zeros(0, dtype=torch.int32, device=attention_inputs.input_lengths.device)
+def check_attention_inputs(attention_inputs: PyAttentionInputs) -> None:
+    device = attention_inputs.input_lengths.device
+    dtype = torch.int32
+    
+    default_tensors = {
+        'prefix_lengths': torch.zeros(0, dtype=dtype, device=device),
+        'sequence_lengths': torch.zeros(0, dtype=dtype, device=device),
+        'kv_cache_block_id_host': torch.zeros(0, dtype=dtype, device=device)
+    }
+    
+    for attr_name, default_tensor in default_tensors.items():
+        if getattr(attention_inputs, attr_name) is None:
+            setattr(attention_inputs, attr_name, default_tensor)
 
 class MlaFlashInferPrefillOp(object):
     def __init__(
