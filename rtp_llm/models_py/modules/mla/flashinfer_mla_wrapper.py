@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -27,9 +28,20 @@ try:
             weights: List[Dict[str, torch.Tensor]],
             cos_sin_cache: torch.Tensor,
             absorb_opt_len: int = 1024,
-            use_trt_fmha: bool = False,
+            use_trt_fmha: bool = True,
         ) -> None:
             # trt prefill not support reuse cache yet
+            absorb_opt_len = int(
+                os.environ.get("RTP_LLM_ABSORB_OPT_LEN", absorb_opt_len)
+            )
+            use_trt_fmha = os.environ.get(
+                "RTP_LLM_USE_TRT_FMHA", str(use_trt_fmha)
+            ).lower() in ("true", "1", "yes")
+            logging.info(
+                "MlaFlashInferPrefillImpl init, absorb_opt_len: %d, use_trt_fmha: %d",
+                absorb_opt_len,
+                use_trt_fmha,
+            )
             super().__init__(
                 MlaFlashInferPrefillOp(
                     config,

@@ -142,7 +142,7 @@ class MlaFlashInferPrefillOp(object):
                 dtype=torch.int8,
                 device=self.weights[0].get(W.mla_k_nope_w).device,
             )
-        if use_trt_fmha:
+        if self.use_trt_fmha:
             from rtp_llm.ops.compute_ops import TRTAttnOp
 
             self.prefill_wrapper = TRTAttnOp(self.config)
@@ -166,19 +166,20 @@ class MlaFlashInferPrefillOp(object):
             attention_inputs.kv_cache_block_id_host,
             self.token_per_block,
         )
-        self.prefill_wrapper.plan(
-            mla_params.qo_indptr,
-            mla_params.prefill_page_indptr,
-            self.num_heads,
-            self.num_heads,
-            self.qk_rope_head_dim + self.qk_nope_head_dim,
-            self.qk_nope_head_dim,
-            sm_scale=(1.0 / (self.qk_rope_head_dim + self.qk_nope_head_dim) ** 0.5)
-            * self.softmax_extra_scale,
-            causal=True,
-            q_data_type=torch.bfloat16,
-            kv_data_type=torch.bfloat16,
-        )
+        if not self.use_trt_fmha:
+            self.prefill_wrapper.plan(
+                mla_params.qo_indptr,
+                mla_params.prefill_page_indptr,
+                self.num_heads,
+                self.num_heads,
+                self.qk_rope_head_dim + self.qk_nope_head_dim,
+                self.qk_nope_head_dim,
+                sm_scale=(1.0 / (self.qk_rope_head_dim + self.qk_nope_head_dim) ** 0.5)
+                * self.softmax_extra_scale,
+                causal=True,
+                q_data_type=torch.bfloat16,
+                kv_data_type=torch.bfloat16,
+            )
         # for reuse cache indexed batched
         self.reuse_cache_page_indice = mla_params.reuse_cache_page_indice
         self.qo_indptr = mla_params.qo_indptr
