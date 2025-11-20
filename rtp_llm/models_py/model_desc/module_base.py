@@ -5,6 +5,7 @@ from torch import Tensor, nn
 
 from rtp_llm.config.gpt_init_model_parameters import GptInitModelParameters
 from rtp_llm.model_loader.model_weight_info import ModelWeights
+from rtp_llm.models_py.distributed.symm_mem import get_symm_mem_communicator
 from rtp_llm.models_py.modules import DECODE_MHA_IMPS, PREFILL_MHA_IMPS, FMHAImplBase
 from rtp_llm.models_py.modules.mla import DECODE_MLA_IMPS, PREFILL_MLA_IMPS
 from rtp_llm.ops.compute_ops import (
@@ -36,6 +37,8 @@ class GptModelBase(nn.Module):
         )
         ## (batch_size -> fmha_params)
         self.params_dict: dict[int, Any] = {}
+        if self.config.tp_size > 1:
+            get_symm_mem_communicator()
 
         logging.info(
             f"GptModelBase initialized with layer_num={self.layer_num}, "
