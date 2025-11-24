@@ -15,6 +15,7 @@
 #include "rtp_llm/models_py/bindings/cuda/MoETopkSoftmax.h"
 #include "3rdparty/flashinfer/flashinfer.h"
 #include "rtp_llm/models_py/bindings/cuda/TrtFp8QuantOp.h"
+#include "rtp_llm/models_py/bindings/cuda/ReuseKVCacheOp.h"
 
 using namespace rtp_llm;
 
@@ -132,6 +133,19 @@ void registerBasicCudaOps(py::module& rtp_ops_m) {
                   py::arg("combo_tokens_type_ids"),
                   py::arg("token_type_embedding"),
                   py::arg("input_embedding_scalar") = 1.0f);
+
+    rtp_ops_m.def("reuse_kv_cache_indexed_batched",
+                  &rtp_llm::ReuseKVCacheIndexedBatched,
+                  "Reuse KV cache indexed batched kernel",
+                  py::arg("final_compressed_kv"),
+                  py::arg("final_k_pe"),
+                  py::arg("compressed_kv"),
+                  py::arg("k_pe"),
+                  py::arg("kv_cache_base"),
+                  py::arg("reuse_cache_page_indice"),
+                  py::arg("batch_reuse_info_vec"),
+                  py::arg("qo_indptr"),
+                  py::arg("tokens_per_block"));
 
     // CUDA Graph Copy Kernel Functions
     rtp_ops_m.def("cuda_graph_copy_small2large",
