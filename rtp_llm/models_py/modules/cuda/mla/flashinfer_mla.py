@@ -208,6 +208,22 @@ class MlaFlashInferPrefillOp(object):
         qo_indptr = self.qo_indptr
         batch_reuse_info = self.batch_reuse_info_vec
 
+        # 参数验证：检查 qo_indptr 的长度
+        num_batches = batch_reuse_info.size(0) if batch_reuse_info.numel() > 0 else 0
+        expected_qo_indptr_len = num_batches + 1
+        if num_batches > 0 and qo_indptr.size(0) < expected_qo_indptr_len:
+            raise ValueError(
+                f"qo_indptr length mismatch: expected at least {expected_qo_indptr_len} elements "
+                f"(num_batches={num_batches} + 1), but got {qo_indptr.size(0)}. "
+                f"This indicates qo_indptr was not properly constructed."
+            )
+
+        # 参数验证：检查 tokens_per_block
+        if self.token_per_block <= 0:
+            raise ValueError(
+                f"tokens_per_block must be positive, got {self.token_per_block}"
+            )
+
         # 计算总长度
         total_reuse_len = num_blocks * self.token_per_block
         if total_reuse_len == 0:

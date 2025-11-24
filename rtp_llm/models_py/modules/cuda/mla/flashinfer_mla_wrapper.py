@@ -5,13 +5,13 @@ from typing import Any, Dict, List, Optional
 import torch
 
 from rtp_llm.config.gpt_init_model_parameters import GptInitModelParameters
-from rtp_llm.models_py.modules.fmha import FMHADecodeImplBase, FMHAPrefillImplBase
-from rtp_llm.models_py.modules.mla.flashinfer_mla import (
+from rtp_llm.models_py.modules.cuda.mla.flashinfer_mla import (
     MlaFlashInferDecodeOp,
     MlaFlashInferPrefillOp,
     warmup_flashinfer_python,
 )
-from rtp_llm.models_py.modules.mla.rotary_emb import MlaRotaryEmbeddingOp
+from rtp_llm.models_py.modules.cuda.mla.rotary_emb import MlaRotaryEmbeddingOp
+from rtp_llm.models_py.modules.fmha import FMHADecodeImplBase, FMHAPrefillImplBase
 from rtp_llm.ops import FMHAType
 from rtp_llm.ops.compute_ops import KVCache, PyAttentionInputs
 
