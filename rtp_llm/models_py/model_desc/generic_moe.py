@@ -167,7 +167,7 @@ class GenericMoeLayer(nn.Module):
 
         self.hidden_dim = config.hidden_size
         self.ffn_dim = config.moe_inter_padding_size
-        self.num_experts = config.expert_num
+        self.num_experts = config.phy_exp_num
         self.top_k = config.moe_k
 
         self.gate = Linear(weights[W.moe_gate], None)
