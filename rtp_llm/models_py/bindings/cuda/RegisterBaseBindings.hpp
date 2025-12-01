@@ -16,6 +16,7 @@
 #include "3rdparty/flashinfer/flashinfer.h"
 #include "rtp_llm/models_py/bindings/cuda/TrtFp8QuantOp.h"
 #include "rtp_llm/models_py/bindings/cuda/ReuseKVCacheOp.h"
+#include "rtp_llm/models_py/bindings/cuda/MlaKMergeOp.h"
 
 using namespace rtp_llm;
 
@@ -146,6 +147,13 @@ void registerBasicCudaOps(py::module& rtp_ops_m) {
                   py::arg("batch_reuse_info_vec"),
                   py::arg("qo_indptr"),
                   py::arg("tokens_per_block"));
+
+    rtp_ops_m.def("mla_k_merge",
+                  &rtp_llm::MlaKMerge,
+                  "Fused kernel to merge k_nope and k_pe efficiently",
+                  py::arg("k_out"),
+                  py::arg("k_nope"),
+                  py::arg("k_pe"));
 
     // CUDA Graph Copy Kernel Functions
     rtp_ops_m.def("cuda_graph_copy_small2large",
