@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 import pkg_resources
 import torch
+import triton
+import triton.language as tl
 
 import rtp_llm.models_py.modules.utils as utils
 
@@ -105,6 +107,84 @@ def check_attention_inputs(attention_inputs: PyAttentionInputs) -> None:
     for attr_name, default_tensor in default_tensors.items():
         if getattr(attention_inputs, attr_name) is None:
             setattr(attention_inputs, attr_name, default_tensor)
+
+
+# adapted from sglang/python/sglang/srt/layers/attention/utils.py
+@triton.jit
+def concat_and_cast_mha_k_kernel(
+    k_ptr,
+    k_nope_ptr,
+    k_rope_ptr,
+    head_cnt: tl.constexpr,
+    k_stride0: tl.constexpr,
+    k_stride1: tl.constexpr,
+    nope_stride0: tl.constexpr,
+    nope_stride1: tl.constexpr,
+    rope_stride0: tl.constexpr,
+    nope_dim: tl.constexpr,
+    rope_dim: tl.constexpr,
+):
+    pid_loc = tl.program_id(0)
+    head_range = tl.arange(0, head_cnt)
+
+    k_head_ptr = k_ptr + pid_loc * k_stride0 + head_range[:, None] * k_stride1
+
+    nope_offs = tl.arange(0, nope_dim)
+
+    src_nope_ptr = (
+        k_nope_ptr
+        + pid_loc * nope_stride0
+        + head_range[:, None] * nope_stride1
+        + nope_offs[None, :]
+    )
+    dst_nope_ptr = k_head_ptr + nope_offs[None, :]
+
+    src_nope = tl.load(src_nope_ptr)
+    tl.store(dst_nope_ptr, src_nope)
+
+    rope_offs = tl.arange(0, rope_dim)
+    src_rope_ptr = k_rope_ptr + pid_loc * rope_stride0 + rope_offs[None, :]
+    dst_rope_ptr = k_head_ptr + nope_dim + rope_offs[None, :]
+    src_rope = tl.load(src_rope_ptr)
+    tl.store(dst_rope_ptr, src_rope)
+
+
+def concat_and_cast_mha_k_triton(
+    k: torch.Tensor,
+    k_nope: torch.Tensor,
+    k_rope: torch.Tensor,
+):
+    # The source data type will be implicitly converted to the target data type.
+    assert (
+        len(k.shape) == 3 and len(k_nope.shape) == 3 and len(k_rope.shape) == 3
+    ), f"shape should be 3d, but got {k.shape=}, {k_nope.shape=}, {k_rope.shape=}"
+    assert (
+        k.shape[0] == k_nope.shape[0] and k.shape[0] == k_rope.shape[0]
+    ), f"invalid shape, got {k.shape=}, {k_nope.shape=}, {k_rope.shape=}"
+    assert (
+        k.shape[1] == k_nope.shape[1] and 1 == k_rope.shape[1]
+    ), f"invalid shape, got {k.shape=}, {k_nope.shape=}, {k_rope.shape=}"
+    assert (
+        k.shape[-1] == k_nope.shape[-1] + k_rope.shape[-1]
+    ), f"invalid shape, got {k.shape=}, {k_nope.shape=}, {k_rope.shape=}"
+
+    nope_dim = k_nope.shape[-1]
+    rope_dim = k_rope.shape[-1]
+    grid = (k.shape[0],)
+
+    concat_and_cast_mha_k_kernel[grid](
+        k,
+        k_nope,
+        k_rope,
+        k.shape[1],
+        k.stride(0),
+        k.stride(1),
+        k_nope.stride(0),
+        k_nope.stride(1),
+        k_rope.stride(0),
+        nope_dim,
+        rope_dim,
+    )
 
 
 class MlaFlashInferPrefillOp(object):
@@ -244,6 +324,31 @@ class MlaFlashInferPrefillOp(object):
         )
         return final_compressed_kv, final_k_pe
 
+    def _concat_and_cast_mha_k(self, k_nope, k_pe):
+        # Temporary for DeepSeek V3/R1 only, but can generalize if needed
+        k_shape = (
+            k_nope.shape[0],
+            self.num_heads,
+            self.qk_nope_head_dim + self.qk_rope_head_dim,
+        )
+        if (
+            utils.is_cuda()
+            and (self.num_heads == 128)
+            and (self.qk_nope_head_dim == 128)
+            and (self.qk_rope_head_dim == 64)
+        ):
+            k = k_nope.new_empty(*k_shape)
+            rtp_llm_ops.mla_k_merge(k, k_nope, k_pe)
+        elif utils.is_cuda():
+            attn_dtype = k_nope.dtype
+            k = k_nope.new_empty(*k_shape, dtype=attn_dtype)
+            concat_and_cast_mha_k_triton(k, k_nope, k_pe)
+        else:
+            k = k_nope.new_empty(*k_shape)
+            k[..., : self.qk_nope_head_dim] = k_nope
+            k[..., self.qk_nope_head_dim :] = k_pe
+        return k
+
     def forward(
         self,
         q: torch.Tensor,
@@ -274,12 +379,7 @@ class MlaFlashInferPrefillOp(object):
 
         k_nope = k_nope.view(-1, self.num_heads, self.qk_nope_head_dim)
         value_states = value_states.view(-1, self.num_heads, self.qk_nope_head_dim)
-
-        k = k_pe.new_empty(
-            k_pe.size(0), self.num_heads, self.qk_rope_head_dim + self.qk_nope_head_dim
-        )
-        k[..., : self.qk_nope_head_dim] = k_nope
-        k[..., self.qk_nope_head_dim :] = k_pe
+        k = self._concat_and_cast_mha_k(k_nope, k_pe)
 
         if self.use_trt_fmha:
             pad_len = self.qk_rope_head_dim
