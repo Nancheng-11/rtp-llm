@@ -199,7 +199,9 @@ class MlaFlashInferPrefillOp(object):
         """使用融合 CUDA kernel 的优化版本"""
 
         reuse_cache_page_indice = self.reuse_cache_page_indice
-        num_blocks = reuse_cache_page_indice.size(0)
+        num_blocks = 0
+        if reuse_cache_page_indice is not None:
+            num_blocks = reuse_cache_page_indice.size(0)
 
         if num_blocks == 0:
             return compressed_kv, k_pe
