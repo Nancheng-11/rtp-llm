@@ -96,7 +96,7 @@ class MLATest(TestCase):
         block_list = [i for i in range(1, page_num + 1)]
         # print(f"block_list: {block_list}")
         kvcache_block_id = torch.tensor(
-            block_list,
+            [block_list],
             dtype=torch.int32,
             device=torch.device("cpu"),
         )
@@ -197,7 +197,9 @@ class MLATest(TestCase):
 
         out = fmha_impl.compute_prefill_context(q, compressed_kv, k_pe, kv_cache, 0)
 
-        index_list = fmha_impl.fmha_params.reuse_cache_page_indice.clone()
+        index_list = torch.empty(0, dtype=torch.int32, device=device)
+        if fmha_impl.fmha_params.reuse_cache_page_indice is not None:
+            index_list = fmha_impl.fmha_params.reuse_cache_page_indice.clone()
         selected_blocks = cache[index_list]
         selected_blocks = selected_blocks.view(-1, selected_blocks.size(-1))
 
