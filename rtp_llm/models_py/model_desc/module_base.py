@@ -37,6 +37,7 @@ class GptModelBase(nn.Module):
         )
         ## (batch_size -> fmha_params)
         self.params_dict: dict[int, Any] = {}
+        self.mla_impl = None
         if self.config.tp_size > 1:
             get_symm_mem_communicator()
 
@@ -81,7 +82,11 @@ class GptModelBase(nn.Module):
     def forward(self, inputs: PyModelInputs) -> PyModelOutputs:
         raise NotImplementedError("forward method must be implemented in subclass")
 
-    def get_mla_impl(self, attn_inputs: PyAttentionInputs) -> FMHAImplBase:
+    def get_mla_impl(
+        self, attn_inputs: PyAttentionInputs, is_cuda_graph: bool = False
+    ) -> FMHAImplBase:
+        if self.mla_impl is not None and is_cuda_graph:
+            return self.mla_impl
         mha_impls = PREFILL_MLA_IMPS if attn_inputs.is_prefill else DECODE_MLA_IMPS
         for fmha_impl in mha_impls:
             cos_sin_cache = self.weight.get_global_weight(W.rope_cos_sin_cache)
@@ -92,6 +97,7 @@ class GptModelBase(nn.Module):
                 cos_sin_cache,
             )
             if impl.support():
+                self.mla_impl = impl
                 return impl
         raise Exception(f"can not find fmha type")
 

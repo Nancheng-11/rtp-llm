@@ -349,13 +349,15 @@ class GenericMoeModel(GptModelBase):
             weights.get_global_weight(W.final_ln_gamma), eps=config.layernorm_eps
         )
 
-    def forward(self, inputs: PyModelInputs) -> PyModelOutputs:
+    def forward(
+        self, inputs: PyModelInputs, is_cuda_graph: bool = False
+    ) -> PyModelOutputs:
         input_ids: torch.Tensor = inputs.input_ids
         inputs_embeds = self.embed_tokens(input_ids)
         hidden_states = inputs_embeds
         attention_inputs: PyAttentionInputs = inputs.attention_inputs
         impl_method = FMHAImplFactory.get_fmha_impl_method(self.attention_type)
-        fmha_impl = getattr(self, impl_method)(attention_inputs)
+        fmha_impl = getattr(self, impl_method)(attention_inputs, is_cuda_graph)
 
         for i, decoder_layer in enumerate(self.layers[: self.layer_num]):
             hidden_states = decoder_layer(
