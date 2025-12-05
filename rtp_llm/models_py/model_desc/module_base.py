@@ -65,16 +65,23 @@ class GptModelBase(nn.Module):
         capture_batch_size: int,
         seq_size_per_block: int,
     ):
-        assert capture_batch_size in self.params_dict
-        params_ptr = self.params_dict[capture_batch_size]
-        assert params_ptr is not None
-        params_ptr.fillParams(
-            sequence_lengths,
-            input_lengths,
-            kv_cache_block_id_host,
-            replay_batch_size,
-            seq_size_per_block,
-        )
+        pass
+        # assert capture_batch_size in self.params_dict
+        # params_ptr = self.params_dict[capture_batch_size]
+        # assert params_ptr is not None
+        # params_ptr.fillParams(
+        #     sequence_lengths,
+        #     input_lengths,
+        #     kv_cache_block_id_host,
+        #     replay_batch_size,
+        #     seq_size_per_block,
+        # )
+
+    def gen_plan_before_replay(self, params: Any):
+        pass
+
+    def init_mla_impl_before_capture(self, attention_inputs):
+        pass
 
     def forward(self, inputs: PyModelInputs) -> PyModelOutputs:
         raise NotImplementedError("forward method must be implemented in subclass")

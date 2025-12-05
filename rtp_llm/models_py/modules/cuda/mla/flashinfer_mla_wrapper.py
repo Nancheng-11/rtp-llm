@@ -1,6 +1,7 @@
 import logging
-from typing import Any, Dict, List, Optional
 import os
+from typing import Any, Dict, List, Optional
+
 import torch
 
 from rtp_llm.config.gpt_init_model_parameters import GptInitModelParameters
@@ -30,9 +31,7 @@ class MlaFlashInferPrefillImpl(FMHAPrefillImplBase):
         use_trt_fmha: bool = False,
     ) -> None:
         # trt prefill not support reuse cache yet
-        absorb_opt_len = int(
-            os.environ.get("RTP_LLM_ABSORB_OPT_LEN", absorb_opt_len)
-        )
+        absorb_opt_len = int(os.environ.get("RTP_LLM_ABSORB_OPT_LEN", absorb_opt_len))
         super().__init__(
             MlaFlashInferPrefillOp(
                 config,
@@ -53,10 +52,15 @@ class MlaFlashInferPrefillImpl(FMHAPrefillImplBase):
                 rope_head_dim=config.rope_head_dim,
                 token_per_block=config.seq_size_per_block,
                 is_neox_style=False,
+                max_bs=config.concurrency_config.concurrency_limit,
+                max_context_len=config.max_seq_len,
             ),
             attn_inputs,
         )
         self.rope_params = self.fmha_params
+        self.rope_kvcache_impl.cuda_graph_kv_indices[
+            : len(self.fmha_params.page_indice_d)
+        ].copy_(self.fmha_params.page_indice_d, non_blocking=True)
         self.warm_up = config.warm_up
         self.has_reuse_cache = False
         if attn_inputs.prefix_lengths is not None:
@@ -72,7 +76,10 @@ class MlaFlashInferPrefillImpl(FMHAPrefillImplBase):
             config.softmax_extra_scale,
             config.use_mla,
             weights,
+            config.concurrency_config.concurrency_limit,
+            config.max_seq_len,
         )
+        self.aborb_fmha.init_mla_wrapper(self.fmha_params)
         self.aborb_fmha.plan(self.fmha_params)
 
     @staticmethod
@@ -171,6 +178,8 @@ class MlaFlashInferDecodeImpl(FMHADecodeImplBase):
                 config.softmax_extra_scale,
                 config.use_mla,
                 weights,
+                config.concurrency_config.concurrency_limit,
+                config.max_seq_len,
             ),
             MlaRotaryEmbeddingOp(
                 head_size=config.nope_head_dim,
@@ -179,10 +188,15 @@ class MlaFlashInferDecodeImpl(FMHADecodeImplBase):
                 rope_head_dim=config.rope_head_dim,
                 token_per_block=config.seq_size_per_block,
                 is_neox_style=False,
+                max_bs=config.concurrency_config.concurrency_limit,
+                max_context_len=config.max_seq_len,
             ),
             attn_inputs,
         )
         self.rope_params = self.fmha_params
+        self.rope_kvcache_impl.cuda_graph_kv_indices[
+            : len(self.fmha_params.page_indice_d)
+        ].copy_(self.fmha_params.page_indice_d, non_blocking=True)
 
     @staticmethod
     def fmha_type() -> FMHAType:

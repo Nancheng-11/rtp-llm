@@ -99,6 +99,12 @@ void CudaGraphRunner::prepareInputs(PyModelInputs& inputs) {
             inputs.attention_inputs.kv_cache_block_id_host,
             state_.current_batch_size,
             seq_size_per_block_);
+        py_fill_params_method_(inputs.attention_inputs.sequence_lengths,
+                               inputs.attention_inputs.input_lengths,
+                               inputs.attention_inputs.kv_cache_block_id_host,
+                               state_.current_batch_size,
+                               state_.current_batch_size,
+                               seq_size_per_block_);
     } else {
         auto& py_model_inputs_ = graph_instances_[state_.current_real_graph_seq_len].mem_hold_.py_model_inputs_;
 
@@ -382,6 +388,7 @@ void CudaGraphRunner::captureOneGraphInstance(int key, const char* key_type) {
         RTP_LLM_LOG_INFO("Capture for %s %d begin.", key_type, key);
         PyModelOutputs outputs;
         {
+            py_init_mla_impl_method_(inputs.attention_inputs);
             graph.capture_begin();
             CudaGraphCaptureGuard capture_guard;
             auto                  py_outputs_obj = py_forward_method_(inputs);

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import torch
 from torch import nn
@@ -210,14 +210,75 @@ class GenericMoeModel(GptModelBase):
             weights.get_global_weight(W.final_ln_gamma), eps=config.layernorm_eps
         )
 
+        # for cuda graph
+        self.mla_impl_cuda_graph = {}
+
+    # for cuda graph attn kernel params' fill and plan
+    def fill_params(
+        self,
+        sequence_lengths: torch.Tensor,
+        input_lengths: torch.Tensor,
+        kv_cache_block_id_host: torch.Tensor,
+        replay_batch_size: int,
+        capture_batch_size: int,
+        seq_size_per_block: int,
+    ):
+        from rtp_llm.ops.compute_ops import rtp_llm_ops
+
+        mla_params = rtp_llm_ops.fill_mla_params(
+            sequence_lengths,
+            input_lengths,
+            kv_cache_block_id_host,
+            input_lengths.size(0),
+            self.config.seq_size_per_block,
+            torch.Tensor(),
+        )
+        self.gen_plan_before_replay(mla_params)
+
+    def gen_plan_before_replay(self, params: Any):
+        bs = params.batch_indice_d.size(0)
+        assert self.mla_impl_cuda_graph[bs] is not None, "mla_impl must be set"
+        self.mla_impl_cuda_graph[bs].rope_params.positions_d.copy_(
+            params.positions_d, non_blocking=True
+        )
+        self.mla_impl_cuda_graph[bs].rope_params.batch_indice_d.copy_(
+            params.batch_indice_d, non_blocking=True
+        )
+        self.mla_impl_cuda_graph[bs].rope_kvcache_impl.cuda_graph_kv_indices[
+            : len(params.page_indice_d)
+        ].copy_(params.page_indice_d, non_blocking=True)
+        self.mla_impl_cuda_graph[bs].rope_params.decode_page_indptr_d.copy_(
+            params.decode_page_indptr_d, non_blocking=True
+        )
+        self.mla_impl_cuda_graph[bs].rope_params.paged_kv_last_page_len_d.copy_(
+            params.paged_kv_last_page_len_d, non_blocking=True
+        )
+        self.mla_impl_cuda_graph[bs].fmha_impl.plan(params)
+
+    def init_mla_impl_before_capture(self, attention_inputs):
+        bs = attention_inputs.input_lengths.size(0)
+        mla_impl = AttnImplFactory.get_fmha_impl(
+            self.config, self.weight, attention_inputs
+        )
+        self.mla_impl_cuda_graph[bs] = mla_impl
+
     def forward(self, inputs: PyModelInputs) -> PyModelOutputs:
         input_ids: torch.Tensor = inputs.input_ids
         inputs_embeds = self.embed_tokens(input_ids)
         hidden_states = inputs_embeds
         attention_inputs: PyAttentionInputs = inputs.attention_inputs
-        fmha_impl = AttnImplFactory.get_fmha_impl(
-            self.config, self.weight, attention_inputs
-        )
+        # flashinfer __init__ must be done before capture
+        bs = attention_inputs.input_lengths.size(0)
+        if (
+            self.mla_impl_cuda_graph.get(bs) is not None
+            and not attention_inputs.is_prefill
+        ):
+            fmha_impl = self.mla_impl_cuda_graph[bs]
+            assert fmha_impl is not None, "mla_impl must be set"
+        else:
+            fmha_impl = AttnImplFactory.get_fmha_impl(
+                self.config, self.weight, attention_inputs
+            )
 
         for i, decoder_layer in enumerate(self.layers[: self.layer_num]):
             hidden_states = decoder_layer(

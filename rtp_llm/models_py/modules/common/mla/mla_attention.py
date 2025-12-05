@@ -103,8 +103,8 @@ class MlaAttention(nn.Module):
             q_view, compressed_kv, k_pe, kv_cache, self.layer_idx
         )
 
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
-        attn_output = self.o_proj(attn_output)
+        attn_output_contiguous = attn_output.reshape(*input_shape, -1).contiguous()
+        output = self.o_proj(attn_output_contiguous)
         if self.config.tp_size > 1:
-            attn_output = all_reduce(attn_output, group=Group.TP)
-        return attn_output
+            output = all_reduce(output, group=Group.TP)
+        return output

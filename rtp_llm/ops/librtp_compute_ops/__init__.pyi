@@ -153,6 +153,9 @@ class KVCache:
     @v_cache_base.setter
     def v_cache_base(self, arg0: torch.Tensor) -> None:
         ...
+    @v_cache_base.setter
+    def v_cache_base(self, arg0: torch.Tensor) -> None:
+        ...
     @property
     def v_scale_base(self) -> torch.Tensor:
         """
@@ -205,11 +208,17 @@ class PyAttentionInputs:
     cache_store_inputs: PyCacheStoreInputs | None
     cu_seqlens: torch.Tensor
     dtype: TypeMeta
+    cache_store_inputs: PyCacheStoreInputs | None
+    cu_seqlens: torch.Tensor
+    dtype: TypeMeta
     input_lengths: torch.Tensor
     is_prefill: bool
     kv_block_offset: int
     kv_cache_block_id_device: torch.Tensor
+    kv_block_offset: int
+    kv_cache_block_id_device: torch.Tensor
     kv_cache_block_id_host: torch.Tensor
+    padding_offset: torch.Tensor
     padding_offset: torch.Tensor
     prefix_lengths: torch.Tensor
     sequence_lengths: torch.Tensor
