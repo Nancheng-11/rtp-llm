@@ -1,11 +1,14 @@
 import logging
 from enum import Enum
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 from torch.distributed.distributed_c10d import AllreduceOptions, ReduceOp
 
-from rtp_llm.models_py.distributed.symm_mem import get_symm_mem_communicator
+from rtp_llm.models_py.distributed.symm_mem import (
+    TorchSymmMemCommunicator,
+    _init_symm_mem_communicator,
+)
 
 
 class Group(Enum):
@@ -18,6 +21,18 @@ try:
     from rtp_llm.ops.compute_ops import RtpProcessGroup, RtpProcessGroupType
 
     _group_map: Dict[Group, RtpProcessGroup] = {}
+
+    _symm_mem_comm: Optional[TorchSymmMemCommunicator] = None
+
+    def _get_symm_mem_communicator(
+        tp_group: torch.distributed.ProcessGroup, buffer: torch.Tensor = None
+    ) -> Optional[TorchSymmMemCommunicator]:
+        """Get or initialize TorchSymmMemCommunicator (lazy initialization)."""
+        global _symm_mem_comm
+        if _symm_mem_comm is None:
+            logging.info(f"TorchSymmMemCommunicator: get_symm_mem_communicator")
+            _symm_mem_comm = _init_symm_mem_communicator(tp_group, buffer)
+        return _symm_mem_comm
 
     def _group_type_convert(group: Group) -> RtpProcessGroupType:
         if group == Group.DP:
@@ -50,7 +65,14 @@ try:
         tensor: torch.Tensor, group: Group = Group.DP_AND_TP
     ) -> torch.Tensor:
         if group == Group.TP:
-            symm_mem_comm = get_symm_mem_communicator()
+            from rtp_llm.distribute.gang_server import (
+                g_symm_mem_buffer,
+                g_symm_mem_group,
+            )
+
+            symm_mem_comm = _get_symm_mem_communicator(
+                g_symm_mem_group, g_symm_mem_buffer
+            )
             if (
                 symm_mem_comm is not None
                 and symm_mem_comm.should_torch_symm_mem_allreduce(tensor)

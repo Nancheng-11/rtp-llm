@@ -29,6 +29,9 @@ from rtp_llm.distribute.worker_info import (
     update_master_info,
 )
 
+g_symm_mem_group = None
+g_symm_mem_buffer = None
+
 
 def http_post_with_retry(
     url: str, data: Dict[str, Any], retry_limit: int = 3, timeout: int = 150
@@ -410,6 +413,28 @@ class GangServer:
             timeout=timedelta(seconds=timeout),
         )
 
+    def prepare_symm_mem_communicator(self):
+        import torch.distributed._symmetric_memory as torch_symm_mem
+
+        target_device = torch.device(f"cuda:{g_parallel_info.local_rank}")
+        dtype = torch.bfloat16
+        global g_symm_mem_buffer
+        g_symm_mem_buffer = torch_symm_mem.empty(
+            64 * 1024 * 1024 // 2,
+            device=target_device,
+            dtype=dtype,
+        )
+        tp_size = int(os.environ.get("TP_SIZE", "1"))
+        world_rank = torch.distributed.get_rank()
+        dp_rank = world_rank // tp_size
+        tp_group_start = dp_rank * tp_size
+        tp_ranks = list(range(tp_group_start, tp_group_start + tp_size))
+        default_backend = torch.distributed.get_backend()
+        global g_symm_mem_group
+        g_symm_mem_group = torch.distributed.new_group(
+            tp_ranks, backend=default_backend
+        )
+
     def start(self):
         if g_parallel_info.world_size == 1:
             logging.info("world_size==1, do not start gang_server")
@@ -438,6 +463,7 @@ class GangServer:
             timeout=init_process_timeout,
         )
 
+        self.prepare_symm_mem_communicator()
         logging.info(f"gang worker {g_parallel_info} start_health_check")
         self.start_health_check()
         logging.info(f"gang init done")

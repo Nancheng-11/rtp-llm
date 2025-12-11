@@ -55,7 +55,12 @@ class TorchSymmMemCommunicator:
         10: [6, 8],
     }
 
-    def __init__(self, group: ProcessGroup, device: Union[int, str, torch.device]):
+    def __init__(
+        self,
+        group: ProcessGroup,
+        device: Union[int, str, torch.device],
+        buffer: torch.Tensor = None,
+    ):
         """
         Args:
             group: Torch process group used for rendezvous and naming.
@@ -97,13 +102,20 @@ class TorchSymmMemCommunicator:
         self.max_size = TORCH_SYMM_MEM_ALL_REDUCE_MAX_SIZES[self.device_capability][
             self.world_size
         ]
-        self.buffer = torch_symm_mem.empty(
-            self.max_size // self.dtype.itemsize,
-            device=self.device,
-            dtype=self.dtype,
-        )
+        if buffer is not None:
+            self.buffer = buffer
+        else:
+            logging.info(f"TorchSymmMemCommunicator: create new buffer")
+            self.buffer = torch_symm_mem.empty(
+                self.max_size // self.dtype.itemsize,
+                device=self.device,
+                dtype=self.dtype,
+            )
         # Try ProcessGroup object first, fallback to group_name if needed
+        logging.info(f"TorchSymmMemCommunicator: self buffer {self.buffer.device}")
+        logging.info(f"TorchSymmMemCommunicator: rendezvous {self.group.group_name}")
         handle = torch_symm_mem.rendezvous(self.buffer, group=self.group.group_name)
+        logging.info(f"TorchSymmMemCommunicator: rendezvous done use self buffer")
         if handle.multicast_ptr == 0:
             logging.warning(
                 "TorchSymmMemCommunicator: torch symmetric memory "
@@ -170,53 +182,35 @@ class TorchSymmMemCommunicator:
         return out
 
 
-def _init_symm_mem_communicator() -> Optional[TorchSymmMemCommunicator]:
-    """Initialize TorchSymmMemCommunicator for TP group."""
+def _init_symm_mem_communicator(
+    tp_group: ProcessGroup, buffer: torch.Tensor = None
+) -> Optional[TorchSymmMemCommunicator]:
+    """Initialize TorchSymmMemCommunicator for TP group.
+
+    确保每次执行时环境都是干净的：
+    1. 强制恢复设备状态
+    2. 同步 CUDA 操作
+    3. 同步所有进程
+    4. 验证状态一致性
+    """
     try:
         if not torch.cuda.is_available() or not dist.is_initialized():
             return None
 
-        # Get TP and DP info from environment variables or torch.distributed
         import os
 
         tp_size = int(os.environ.get("TP_SIZE", "1"))
-        world_rank = dist.get_rank()
-
         if tp_size <= 1:
             return None
 
-        # Calculate dp_rank: dp_rank = world_rank // tp_size
-        dp_rank = world_rank // tp_size
+        local_rank = int(os.environ.get("LOCAL_RANK", torch.cuda.current_device()))
+        target_device = torch.device(f"cuda:{local_rank}")
 
-        # Calculate TP group ranks
-        # For TP group, ranks are consecutive within the same DP group
-        # TP ranks: [dp_rank * tp_size, ..., dp_rank * tp_size + tp_size - 1]
-        tp_group_start = dp_rank * tp_size
-        tp_ranks = list(range(tp_group_start, tp_group_start + tp_size))
-
-        # Create or get TP ProcessGroup
-        tp_group = dist.new_group(tp_ranks, backend="nccl")
-        # Get local device
-        local_rank = int(torch.cuda.current_device())
-        device_obj = torch.device(f"cuda:{local_rank}")
-        # Initialize TorchSymmMemCommunicator
-        symm_mem_comm = TorchSymmMemCommunicator(tp_group, device_obj)
+        symm_mem_comm = TorchSymmMemCommunicator(tp_group, target_device, buffer)
         if symm_mem_comm.disabled:
             return None
+        logging.info(f"TorchSymmMemCommunicator: initialized")
         return symm_mem_comm
     except Exception as e:
-        # If initialization fails, fall back to regular all_reduce
         logging.warning(f"Failed to initialize TorchSymmMemCommunicator: {e}")
         return None
-
-
-# Use lazy initialization instead of module-level initialization
-_symm_mem_comm: Optional[TorchSymmMemCommunicator] = None
-
-
-def get_symm_mem_communicator() -> Optional[TorchSymmMemCommunicator]:
-    """Get or initialize TorchSymmMemCommunicator (lazy initialization)."""
-    global _symm_mem_comm
-    if _symm_mem_comm is None:
-        _symm_mem_comm = _init_symm_mem_communicator()
-    return _symm_mem_comm
