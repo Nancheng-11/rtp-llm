@@ -523,6 +523,9 @@ class DeepSeekV2(BaseModel):
         DeepSeekV2._from_hf(config, ckpt_path)
         return config
 
+    def support_cuda_graph(self) -> bool:
+        return True
+
     def _create_python_model(self) -> Optional[GptModelBase]:
         self.py_model = GenericMoeModel(self.config, self.weight)
 

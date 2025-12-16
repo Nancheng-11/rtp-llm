@@ -46,6 +46,7 @@ class FlashInferDecodeImpl(FMHADecodeImplBase):
             FusedRopeKVCacheDecodeOp(config.gpt_init_params),
             attn_inputs,
         )
+        self.seq_size_per_block = config.seq_size_per_block
         self.support_ = self.support_ and (config.use_mla == False)
 
     @staticmethod
@@ -54,3 +55,20 @@ class FlashInferDecodeImpl(FMHADecodeImplBase):
 
     def support_cuda_graph(self) -> bool:
         return True
+
+    def prepare_replay(self, attn_inputs: PyAttentionInputs):
+        assert self.fmha_impl is not None
+        batch_size = attn_inputs.input_lengths.size(0)
+        self.fmha_params.fill_params(
+            attn_inputs.sequence_lengths,
+            attn_inputs.input_lengths,
+            attn_inputs.kv_cache_block_id_host,
+            batch_size,
+            self.seq_size_per_block,
+        )
+
+        assert self.rope_kvcache_impl is not None
+        new_rope_params = self.rope_kvcache_impl.prepare(attn_inputs)
+        new_offset = new_rope_params.kv_cache_offset
+        old_offset = self.rope_params.kv_cache_offset
+        self.copy_kv_cache_offset(old_offset, new_offset)

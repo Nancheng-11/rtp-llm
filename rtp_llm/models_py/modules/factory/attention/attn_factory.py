@@ -15,7 +15,10 @@ DECODE_MLA_IMPS: List[type[FMHAImplBase]] = []
 
 
 def get_mla_impl(
-    config: GptInitModelParameters, weight: ModelWeights, attn_inputs: PyAttentionInputs
+    config: GptInitModelParameters,
+    weight: ModelWeights,
+    attn_inputs: PyAttentionInputs,
+    is_cuda_graph: bool = False,
 ) -> FMHAImplBase:
     mla_impls = PREFILL_MLA_IMPS if attn_inputs.is_prefill else DECODE_MLA_IMPS
     for impl in mla_impls:
@@ -26,18 +29,21 @@ def get_mla_impl(
             weight.weights,
             cos_sin_cache,
         )
-        if instance.support():
+        if instance.support() and (not is_cuda_graph or instance.support_cuda_graph()):
             return instance
     raise Exception(f"can not find mla type")
 
 
 def get_fmha_impl(
-    config: GptInitModelParameters, weight: ModelWeights, attn_inputs: PyAttentionInputs
+    config: GptInitModelParameters,
+    weight: ModelWeights,
+    attn_inputs: PyAttentionInputs,
+    is_cuda_graph: bool = False,
 ) -> FMHAImplBase:
     mha_impls = PREFILL_MHA_IMPS if attn_inputs.is_prefill else DECODE_MHA_IMPS
     for impl in mha_impls:
         instance = impl(config, attn_inputs)
-        if instance.support():
+        if instance.support() and (not is_cuda_graph or instance.support_cuda_graph()):
             return instance
     raise Exception(f"can not find mha type")
 
@@ -62,10 +68,11 @@ class AttnImplFactory(object):
         config: GptInitModelParameters,
         weight: ModelWeights,
         attn_inputs: PyAttentionInputs,
+        is_cuda_graph: bool = False,
     ) -> FMHAImplBase:
         key_str = "mla" if config.use_mla else "mha"
         fmha_impl_method = cls.FMHA_IMPL_REGISTRY[key_str]
-        instance = fmha_impl_method(config, weight, attn_inputs)
+        instance = fmha_impl_method(config, weight, attn_inputs, is_cuda_graph)
         logging.debug(f"get fmha impl: {instance.fmha_type()}")
         return instance
 

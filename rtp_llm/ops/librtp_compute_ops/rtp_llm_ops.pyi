@@ -19,6 +19,109 @@ class FlashInferDecodeOp:
         ...
     def support(self, attn_inputs: librtp_compute_ops.PyAttentionInputs) -> bool:
         ...
+class FlashInferMlaAttnParams(librtp_compute_ops.ParamsBase):
+    def __init__(self) -> None:
+        ...
+    @property
+    def batch_indice_d(self) -> torch.Tensor:
+        """
+        Batch indices on DEVICE
+        """
+    @property
+    def batch_indice_h(self) -> torch.Tensor:
+        """
+        Batch indices on HOST
+        """
+    @property
+    def batch_reuse_info_vec_d(self) -> torch.Tensor:
+        """
+        Batch reuse info vector on DEVICE
+        """
+    @property
+    def batch_reuse_info_vec_h(self) -> torch.Tensor:
+        """
+        Batch reuse info vector on HOST
+        """
+    @property
+    def decode_page_indptr_d(self) -> torch.Tensor:
+        """
+        Decode page indptr on DEVICE
+        """
+    @property
+    def decode_page_indptr_h(self) -> torch.Tensor:
+        """
+        Decode page indptr on HOST
+        """
+    @property
+    def kvlen_d(self) -> torch.Tensor:
+        """
+        KV length on DEVICE
+        """
+    @property
+    def kvlen_h(self) -> torch.Tensor:
+        """
+        KV length on HOST
+        """
+    @property
+    def page_indice_d(self) -> torch.Tensor:
+        """
+        Page indices on DEVICE
+        """
+    @property
+    def page_indice_h(self) -> torch.Tensor:
+        """
+        Page indices on HOST
+        """
+    @property
+    def paged_kv_last_page_len_d(self) -> torch.Tensor:
+        """
+        Paged KV last page length on DEVICE
+        """
+    @property
+    def paged_kv_last_page_len_h(self) -> torch.Tensor:
+        """
+        Paged KV last page length on HOST
+        """
+    @property
+    def positions_d(self) -> torch.Tensor:
+        """
+        Positions on DEVICE
+        """
+    @property
+    def positions_h(self) -> torch.Tensor:
+        """
+        Positions on HOST
+        """
+    @property
+    def prefill_page_indptr_d(self) -> torch.Tensor:
+        """
+        Prefill page indptr on DEVICE
+        """
+    @property
+    def prefill_page_indptr_h(self) -> torch.Tensor:
+        """
+        Prefill page indptr on HOST
+        """
+    @property
+    def qo_indptr_d(self) -> torch.Tensor:
+        """
+        Query/output indptr on DEVICE
+        """
+    @property
+    def qo_indptr_h(self) -> torch.Tensor:
+        """
+        Query/output indptr on HOST
+        """
+    @property
+    def reuse_cache_page_indice_d(self) -> torch.Tensor:
+        """
+        Reuse cache page indices on DEVICE
+        """
+    @property
+    def reuse_cache_page_indice_h(self) -> torch.Tensor:
+        """
+        Reuse cache page indices on HOST
+        """
 class FlashInferPrefillOp:
     def __init__(self, gpt_init_parameter: libth_transformer_config.GptInitParameter) -> None:
         ...
@@ -164,7 +267,7 @@ def embedding_bert(output: torch.Tensor, input: torch.Tensor, weight: torch.Tens
     """
     EmbeddingBert lookup kernel
     """
-def fill_mla_params(t_prefill_lengths: torch.Tensor, t_sequence_lengths: torch.Tensor, t_input_lengths: torch.Tensor, t_kv_cache_block_id_host: torch.Tensor, seq_size_per_block: int) -> librtp_compute_ops.MlaParams:
+def fill_mla_params(t_prefill_lengths: torch.Tensor, t_sequence_lengths: torch.Tensor, t_input_lengths: torch.Tensor, t_kv_cache_block_id_host: torch.Tensor, seq_size_per_block: int) -> FlashInferMlaAttnParams:
     ...
 def fused_add_layernorm(input: torch.Tensor, residual: torch.Tensor, bias: torch.Tensor, weight: torch.Tensor, beta: torch.Tensor, eps: float) -> None:
     """
@@ -185,6 +288,10 @@ def get_cutlass_moe_mm_without_permute_info(topk_ids: torch.Tensor, problem_size
 def layernorm(output: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, beta: torch.Tensor, eps: float) -> None:
     """
     LayerNorm kernel
+    """
+def mla_k_merge(k_out: torch.Tensor, k_nope: torch.Tensor, k_pe: torch.Tensor) -> None:
+    """
+    Fused kernel to merge k_nope and k_pe efficiently
     """
 def moe_post_reorder(permuted_hidden_states: torch.Tensor, topk_weights: torch.Tensor, inv_permuted_idx: torch.Tensor, expert_first_token_offset: torch.Tensor | None = None, topk: int, hidden_states: torch.Tensor) -> None:
     """
@@ -210,6 +317,10 @@ def per_token_group_quant_int8(input: torch.Tensor, output_q: torch.Tensor, outp
     """
 def per_token_quant_fp8(input: torch.Tensor, output_q: torch.Tensor, output_s: torch.Tensor) -> None:
     ...
+def reuse_kv_cache_indexed_batched(final_compressed_kv: torch.Tensor, final_k_pe: torch.Tensor, compressed_kv: torch.Tensor, k_pe: torch.Tensor, kv_cache_base: torch.Tensor, reuse_cache_page_indice: torch.Tensor, batch_reuse_info_vec: torch.Tensor, qo_indptr: torch.Tensor, tokens_per_block: int) -> None:
+    """
+    Reuse KV cache indexed batched kernel
+    """
 def rmsnorm(output: torch.Tensor, input: torch.Tensor, weight: torch.Tensor, eps: float, cuda_stream: int = 0) -> None:
     """
     RMSNorm kernel
