@@ -76,7 +76,6 @@ class GrpcClientWrapper:
             else:
                 return {"status": "error", "message": response.health}
         except Exception as e:
-            logging.error(f"Health check failed: {e}")
             return {
                 "status": "error",
                 "message": str(e),
