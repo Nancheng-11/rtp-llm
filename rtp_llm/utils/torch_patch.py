@@ -32,6 +32,8 @@ try:
     import flashinfer  # 检查是否安装了 flashinfer
     import torch.utils.cpp_extension as cpp_ext
 
+    # import flashinfer.env as env
+    # env.FLASHINFER_WORKSPACE_DIR = os.path.realpath(env.__file__)
     # 使用 realpath 解析软链接到实际目标文件
     _HERE = os.path.realpath(cpp_ext.__file__)
     _TORCH_PATH = os.path.dirname(os.path.dirname(_HERE))
