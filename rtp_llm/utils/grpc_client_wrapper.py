@@ -50,10 +50,9 @@ class GrpcClientWrapper:
             await self.stub.CheckHealth(request, timeout=1)
             return {"status": "ok"}
         except Exception as e:
-            logging.error(f"Health check failed: {e}")
             return {
                 "status": "error",
-                "message": e,
+                "message": str(e),
             }
 
     async def get_cache_status(self, query_params: Dict[str, Any]) -> Dict[str, Any]:
