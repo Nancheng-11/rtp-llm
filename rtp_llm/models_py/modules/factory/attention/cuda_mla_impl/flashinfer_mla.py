@@ -196,9 +196,9 @@ class MlaFlashInferPrefillOp(object):
                 device=self.weights[0].get(W.mla_k_nope_w).device,
             )
         if use_trt_fmha:
-            from rtp_llm.ops.compute_ops import TRTAttnOp
+            from rtp_llm.ops.compute_ops import TRTPagedAttnOp
 
-            self.prefill_wrapper = TRTAttnOp(attn_configs)
+            self.prefill_wrapper = TRTPagedAttnOp(attn_configs)
             return
         else:
             self.prefill_wrapper = BatchPrefillWithRaggedKVCacheWrapper(
@@ -212,6 +212,8 @@ class MlaFlashInferPrefillOp(object):
         return self.use_mla and attention_inputs.is_prefill
 
     def prepare(self, attention_inputs: PyAttentionInputs):
+        if self.use_trt_fmha:
+            return self.prefill_wrapper.prepare(attention_inputs)
         check_attention_inputs(attention_inputs)
         mla_params = rtp_llm_ops.fill_prefill_mla_params(
             attention_inputs.input_lengths,
@@ -225,8 +227,6 @@ class MlaFlashInferPrefillOp(object):
         self.reuse_cache_page_indice = mla_params.reuse_cache_page_indice_d
         self.qo_indptr = mla_params.qo_indptr_d
         self.batch_reuse_info_vec = mla_params.batch_reuse_info_vec_d
-        if self.use_trt_fmha:
-            return self.prefill_wrapper.prepare(attention_inputs)
         return mla_params
 
     def plan(self, mla_params: Any):
@@ -333,11 +333,16 @@ class MlaFlashInferPrefillOp(object):
         layer_id: int,
     ) -> torch.Tensor:
 
-        # trt fmha not support reuse cache yet due to stack
-        if not self.use_trt_fmha:
-            compressed_kv, k_pe = self._reuse_kv_cache_indexed_batched(
-                compressed_kv, k_pe, kv_cache
-            )
+        if self.use_trt_fmha:
+            attn_output = self.prefill_wrapper.forward(q, kv_cache, fmha_params)
+            print(f"attn_output: {attn_output.shape}")
+            print(f"attn_output: {attn_output}")
+            attn_output = attn_output.view(-1, self.num_heads, self.qk_nope_head_dim)
+            return attn_output
+
+        compressed_kv, k_pe = self._reuse_kv_cache_indexed_batched(
+            compressed_kv, k_pe, kv_cache
+        )
 
         k_pe = k_pe.view(-1, 1, self.qk_rope_head_dim)
         self.k_nope_proj = LinearFactory.create_linear_from_weights(
@@ -358,35 +363,17 @@ class MlaFlashInferPrefillOp(object):
         k_nope = k_nope.view(-1, self.num_heads, self.qk_nope_head_dim)
         value_states = value_states.view(-1, self.num_heads, self.qk_nope_head_dim)
         k = self._concat_and_cast_mha_k(k_nope, k_pe)
-
-        if self.use_trt_fmha:
-            pad_len = self.qk_rope_head_dim
-            value_states = F.pad(value_states, (0, pad_len))
-            # trt fmha not support reuse cache yet due to stack
-            fmha_input = torch.stack([q, k, value_states], dim=1)
-            fmha_input = fmha_input.reshape(q.shape[0], -1)
-            kv_cache: Optional[KVCache] = None
-            attn_output = self.prefill_wrapper.forward(
-                fmha_input, kv_cache, fmha_params
-            )
-            attn_output = attn_output.view(
-                q.shape[0],
-                self.num_heads,
-                self.qk_nope_head_dim + self.qk_rope_head_dim,
-            )
-            attn_output, _ = torch.split(
-                attn_output,
-                [
-                    self.qk_nope_head_dim,
-                    self.qk_rope_head_dim,
-                ],
-                dim=-1,
-            )
-
-            return attn_output
+        print(f"q: {q.shape}")
+        print(f"q: {q}")
+        print(f"k: {k.shape}")
+        print(f"k: {k}")
+        print(f"value_states: {value_states.shape}")
+        print(f"value_states: {value_states}")
 
         attn_output = self.prefill_wrapper.run(q, k, value_states)
         attn_output = attn_output.view(-1, self.num_heads, self.qk_nope_head_dim)
+        print(f"attn_output: {attn_output.shape}")
+        print(f"attn_output: {attn_output}")
         return attn_output
 
 

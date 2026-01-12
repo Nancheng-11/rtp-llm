@@ -34,6 +34,7 @@ class MlaFlashInferPrefillImpl(FMHAPrefillImplBase):
     ) -> None:
         # trt prefill not support reuse cache yet
         warmup_flashinfer_python()
+        self.use_trt_fmha = use_trt_fmha
         super().__init__(
             MlaFlashInferPrefillOp(
                 attn_configs,
@@ -58,7 +59,6 @@ class MlaFlashInferPrefillImpl(FMHAPrefillImplBase):
             ),
             attn_inputs,
         )
-        self.rope_params = self.fmha_params
         self.has_reuse_cache = False
         if attn_inputs.prefix_lengths is not None:
             self.has_reuse_cache = attn_inputs.prefix_lengths.max().item() > 0
@@ -66,21 +66,35 @@ class MlaFlashInferPrefillImpl(FMHAPrefillImplBase):
         self.absorb_opt_len = (
             fmha_config.absorb_opt_len if fmha_config is not None else 1024
         )
-        self.aborb_fmha = MlaFlashInferDecodeOp(
-            attn_configs.head_num,
-            attn_configs.kv_lora_rank,
-            attn_configs.rope_head_dim,
-            attn_configs.nope_head_dim,
-            attn_configs.tokens_per_block,
-            attn_configs.softmax_extra_scale,
-            attn_configs.use_mla,
-            weights,
-        )
-        self.aborb_fmha.plan(self.fmha_params)
+        # self.aborb_fmha = MlaFlashInferDecodeOp(
+        #     attn_configs.head_num,
+        #     attn_configs.kv_lora_rank,
+        #     attn_configs.rope_head_dim,
+        #     attn_configs.nope_head_dim,
+        #     attn_configs.tokens_per_block,
+        #     attn_configs.softmax_extra_scale,
+        #     attn_configs.use_mla,
+        #     weights,
+        # )
+        # self.aborb_fmha.plan(self.fmha_params)
 
     @staticmethod
     def fmha_type() -> FMHAType:
         return FMHAType.FLASH_INFER
+
+    def prepare(self, attn_inputs: PyAttentionInputs):
+        super().prepare(attn_inputs)
+        self.rope_params = self.fmha_params
+        if self.use_trt_fmha:
+            from rtp_llm.ops.compute_ops import rtp_llm_ops
+
+            self.rope_params = rtp_llm_ops.fill_prefill_mla_params(
+                attn_inputs.input_lengths,
+                attn_inputs.prefix_lengths,
+                attn_inputs.kv_cache_block_id_host,
+                attn_inputs.input_lengths.size(0),
+                self.fmha_impl.token_per_block,
+            )
 
     def compute_prefill_context(
         self,
