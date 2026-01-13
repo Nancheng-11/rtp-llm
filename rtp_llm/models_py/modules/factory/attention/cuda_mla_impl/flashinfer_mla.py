@@ -70,9 +70,9 @@ def check_attention_inputs(attention_inputs: PyAttentionInputs) -> None:
     dtype = torch.int32
 
     default_tensors = {
-        "prefix_lengths": torch.empty(0, dtype=dtype, device=device),
-        "sequence_lengths": torch.empty(0, dtype=dtype, device=device),
-        "kv_cache_block_id_host": torch.empty(0, dtype=dtype, device=device),
+        "prefix_lengths": torch.zeros(0, dtype=dtype, device=device),
+        "sequence_lengths": torch.zeros(0, dtype=dtype, device=device),
+        "kv_cache_block_id_host": torch.zeros(0, dtype=dtype, device=device),
     }
 
     for attr_name, default_tensor in default_tensors.items():
@@ -200,13 +200,13 @@ class MlaFlashInferPrefillOp(object):
 
             self.prefill_wrapper = TRTAttnOp(attn_configs)
             return
-        else:
-            self.prefill_wrapper = BatchPrefillWithRaggedKVCacheWrapper(
-                g_workspace_buffer,
-                "NHD",
-                backend="auto",
-                use_cuda_graph=False,
-            )
+
+        self.prefill_wrapper = BatchPrefillWithRaggedKVCacheWrapper(
+            g_workspace_buffer,
+            "NHD",
+            backend="auto",
+            use_cuda_graph=False,
+        )
 
     def support(self, attention_inputs: PyAttentionInputs):
         return self.use_mla and attention_inputs.is_prefill
