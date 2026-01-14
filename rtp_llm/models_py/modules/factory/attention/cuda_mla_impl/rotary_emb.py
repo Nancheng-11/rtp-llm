@@ -22,8 +22,6 @@ class MlaRotaryEmbeddingOp(object):
         rope_head_dim: int,
         token_per_block: int,
         is_neox_style: bool,
-        max_bs: int = 0,
-        max_context_len: int = 0,
     ) -> None:
         if cos_sin_cache is None:
             raise Exception(f"RotaryEmbedding need cos_sin_cache but got none")
@@ -53,7 +51,7 @@ class MlaRotaryEmbeddingOp(object):
             q_rope=query,
             k_rope=key.unsqueeze(1),
             cos_sin_cache=self.cos_sin_cache,
-            pos_ids=rope_params.positions_d,
+            pos_ids=rope_params.positions,
             interleave=self.is_neox_style,
         )
 
@@ -65,13 +63,13 @@ class MlaRotaryEmbeddingOp(object):
             page.append_paged_mla_kv_cache(
                 append_ckv_t,
                 key,
-                rope_params.batch_indice_d,
-                rope_params.positions_d,
+                rope_params.batch_indice,
+                rope_params.positions,
                 k_cache,
                 v_cache,
-                rope_params.page_indice_d,
-                rope_params.decode_page_indptr_d,
-                rope_params.paged_kv_last_page_len_d,
+                rope_params.page_indice,
+                rope_params.decode_page_indptr,
+                rope_params.paged_kv_last_page_len,
             )
         else:
             # for warm up jit

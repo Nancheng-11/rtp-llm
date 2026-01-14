@@ -213,26 +213,26 @@ class MlaFlashInferPrefillOp(object):
 
     def prepare(self, attention_inputs: PyAttentionInputs):
         check_attention_inputs(attention_inputs)
-        mla_params = rtp_llm_ops.fill_prefill_mla_params(
-            attention_inputs.input_lengths,
+        mla_params = rtp_llm_ops.fill_mla_params(
             attention_inputs.prefix_lengths,
+            attention_inputs.sequence_lengths,
+            attention_inputs.input_lengths,
             attention_inputs.kv_cache_block_id_host,
-            attention_inputs.input_lengths.size(0),
             self.token_per_block,
         )
         self.plan(mla_params)
         # for reuse cache indexed batched
-        self.reuse_cache_page_indice = mla_params.reuse_cache_page_indice_d
-        self.qo_indptr = mla_params.qo_indptr_d
-        self.batch_reuse_info_vec = mla_params.batch_reuse_info_vec_d
+        self.reuse_cache_page_indice = mla_params.reuse_cache_page_indice
+        self.qo_indptr = mla_params.qo_indptr
+        self.batch_reuse_info_vec = mla_params.batch_reuse_info_vec
         if self.use_trt_fmha:
             return self.prefill_wrapper.prepare(attention_inputs)
         return mla_params
 
     def plan(self, mla_params: Any):
         self.prefill_wrapper.plan(
-            mla_params.qo_indptr_h,
-            mla_params.prefill_page_indptr_h,
+            mla_params.qo_indptr,
+            mla_params.prefill_page_indptr,
             self.num_heads,
             self.num_heads,
             self.qk_rope_head_dim + self.qk_nope_head_dim,
@@ -451,10 +451,11 @@ class MlaFlashInferDecodeOp(object):
 
     def prepare(self, attention_inputs: PyAttentionInputs):
         check_attention_inputs(attention_inputs)
-        fmha_params = rtp_llm_ops.fill_decode_mla_params(
+        fmha_params = rtp_llm_ops.fill_mla_params(
+            attention_inputs.prefix_lengths,
             attention_inputs.sequence_lengths,
+            attention_inputs.input_lengths,
             attention_inputs.kv_cache_block_id_host,
-            attention_inputs.input_lengths.size(0),
             self.token_per_block,
         )
         self.plan(fmha_params)
@@ -462,10 +463,10 @@ class MlaFlashInferDecodeOp(object):
 
     def plan(self, fmha_params: Any):
         self.mla_wrapper.plan(
-            fmha_params.qo_indptr_h,
-            fmha_params.decode_page_indptr_h,
-            fmha_params.page_indice_d,
-            fmha_params.kvlen_h,
+            fmha_params.qo_indptr,
+            fmha_params.decode_page_indptr,
+            fmha_params.page_indice,
+            fmha_params.kvlen,
             self.num_heads,
             self.kv_lora_rank,
             self.qk_rope_head_dim,
