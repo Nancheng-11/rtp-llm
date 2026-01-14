@@ -222,17 +222,17 @@ class MlaFlashInferPrefillOp(object):
         )
         self.plan(mla_params)
         # for reuse cache indexed batched
-        self.reuse_cache_page_indice = mla_params.reuse_cache_page_indice
-        self.qo_indptr = mla_params.qo_indptr
-        self.batch_reuse_info_vec = mla_params.batch_reuse_info_vec
+        self.reuse_cache_page_indice = mla_params.reuse_cache_page_indice_d
+        self.qo_indptr = mla_params.qo_indptr_d
+        self.batch_reuse_info_vec = mla_params.batch_reuse_info_vec_d
         if self.use_trt_fmha:
             return self.prefill_wrapper.prepare(attention_inputs)
         return mla_params
 
     def plan(self, mla_params: Any):
         self.prefill_wrapper.plan(
-            mla_params.qo_indptr,
-            mla_params.prefill_page_indptr,
+            mla_params.qo_indptr_d,
+            mla_params.prefill_page_indptr_d,
             self.num_heads,
             self.num_heads,
             self.qk_rope_head_dim + self.qk_nope_head_dim,
@@ -463,10 +463,10 @@ class MlaFlashInferDecodeOp(object):
 
     def plan(self, fmha_params: Any):
         self.mla_wrapper.plan(
-            fmha_params.qo_indptr,
-            fmha_params.decode_page_indptr,
-            fmha_params.page_indice,
-            fmha_params.kvlen,
+            fmha_params.qo_indptr_d,
+            fmha_params.decode_page_indptr_d,
+            fmha_params.page_indice_d,
+            fmha_params.kvlen_d,
             self.num_heads,
             self.kv_lora_rank,
             self.qk_rope_head_dim,

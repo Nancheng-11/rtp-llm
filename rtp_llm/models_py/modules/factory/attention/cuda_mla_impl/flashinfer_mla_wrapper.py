@@ -224,12 +224,11 @@ class MlaFlashInferDecodeImpl(FMHADecodeImplBase):
         Note: Since rope_params and fmha_params share the same object reference,
         updating fmha_params automatically reflects in rope_params.
         """
-        batch_size = attn_inputs.input_lengths.size(0)
         self.fmha_params.fill_params(
+            attn_inputs.prefix_lengths,
             attn_inputs.sequence_lengths,
             attn_inputs.input_lengths,
             attn_inputs.kv_cache_block_id_host,
-            batch_size,
             self.seq_size_per_block,
         )
         self.fmha_impl.plan(self.fmha_params)
