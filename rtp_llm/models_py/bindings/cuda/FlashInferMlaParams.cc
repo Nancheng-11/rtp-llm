@@ -41,10 +41,15 @@ FlashInferMlaAttnParams::allocateManyBuffer(const std::vector<std::vector<int64_
     }
 
     // Create tensor views using from_blob
-    auto   buf_ptr = buf.data_ptr<int32_t>();
-    size_t offset  = 0;
+    size_t offset = 0;
     for (size_t i = 0; i < sizes.size(); i++) {
-        tensors.emplace_back(torch::from_blob(buf_ptr + offset, shapes[i], options));
+        // Calculate actual element count for this tensor
+        size_t actual_size = 1;
+        for (const auto dim : shapes[i]) {
+            actual_size *= dim;
+        }
+        // Slice from buf and reshape to target shape
+        tensors.emplace_back(buf.slice(0, offset, offset + actual_size).reshape(shapes[i]));
         offset += sizes[i];
     }
 
@@ -317,11 +322,11 @@ void FlashInferMlaAttnParams::refreshBuffer(
     batch_reuse_info_vec_h.unsafeGetTensorImpl()->set_sizes_contiguous(shape);
 }
 
-MlaParams FlashInferMlaAttnParams::fillParams(torch::Tensor t_prefix_lengths,
-                                              torch::Tensor t_sequence_lengths,
-                                              torch::Tensor t_input_lengths,
-                                              torch::Tensor t_kv_cache_block_id_host,
-                                              int           seq_size_per_block) {
+void FlashInferMlaAttnParams::fillParams(torch::Tensor t_prefix_lengths,
+                                         torch::Tensor t_sequence_lengths,
+                                         torch::Tensor t_input_lengths,
+                                         torch::Tensor t_kv_cache_block_id_host,
+                                         int           seq_size_per_block) {
     const int batch_size = t_input_lengths.size(0);
 
     // First pass: calculate required sizes accurately
@@ -380,21 +385,7 @@ MlaParams FlashInferMlaAttnParams::fillParams(torch::Tensor t_prefix_lengths,
     kvlen                   = kvlen_d;
     positions               = positions_d;
     batch_reuse_info_vec    = batch_size > 0 ? batch_reuse_info_vec_d : torch::Tensor();
-
-    // Return MlaParams with DEVICE tensors
-    MlaParams params;
-    params.batch_indice            = batch_indice_d;
-    params.page_indice             = page_indice_d;
-    params.reuse_cache_page_indice = reuse_page_num > 0 ? reuse_cache_page_indice_d : torch::Tensor();
-    params.decode_page_indptr      = decode_page_indptr_d;
-    params.prefill_page_indptr     = prefill_page_indptr_d;
-    params.paged_kv_last_page_len  = paged_kv_last_page_len_d;
-    params.qo_indptr               = qo_indptr_d;
-    params.kvlen                   = kvlen_d;
-    params.positions               = positions_d;
-    params.batch_reuse_info_vec    = batch_size > 0 ? batch_reuse_info_vec_d : torch::Tensor();
-
-    return params;
+    return;
 }
 
 void registerPyFlashInferMlaParams(pybind11::module& m) {
@@ -463,12 +454,9 @@ void registerPyFlashInferMlaParams(pybind11::module& m) {
            torch::Tensor t_input_lengths,
            torch::Tensor t_kv_cache_block_id_host,
            int           seq_size_per_block) {
-            auto params     = std::make_shared<rtp_llm::FlashInferMlaAttnParams>();
-            auto mla_params = params->fillParams(
+            auto params = std::make_shared<rtp_llm::FlashInferMlaAttnParams>();
+            params->fillParams(
                 t_prefill_lengths, t_sequence_lengths, t_input_lengths, t_kv_cache_block_id_host, seq_size_per_block);
-            // Store the params object in _params_holder to keep it alive
-            // This ensures the underlying buffers (buf_d, buf_h) are not deallocated
-            mla_params._params_holder = std::static_pointer_cast<void>(params);
             return params;
         },
         pybind11::arg("t_prefill_lengths"),
