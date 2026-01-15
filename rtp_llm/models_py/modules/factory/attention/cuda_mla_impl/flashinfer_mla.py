@@ -70,9 +70,9 @@ def check_attention_inputs(attention_inputs: PyAttentionInputs) -> None:
     dtype = torch.int32
 
     default_tensors = {
-        "prefix_lengths": torch.zeros(0, dtype=dtype, device=device),
-        "sequence_lengths": torch.zeros(0, dtype=dtype, device=device),
-        "kv_cache_block_id_host": torch.zeros(0, dtype=dtype, device=device),
+        "prefix_lengths": torch.empty(0, dtype=dtype, device=device),
+        "sequence_lengths": torch.empty(0, dtype=dtype, device=device),
+        "kv_cache_block_id_host": torch.empty(0, dtype=dtype, device=device),
     }
 
     for attr_name, default_tensor in default_tensors.items():
@@ -463,10 +463,10 @@ class MlaFlashInferDecodeOp(object):
 
     def plan(self, fmha_params: Any):
         self.mla_wrapper.plan(
-            fmha_params.qo_indptr_d,
-            fmha_params.decode_page_indptr_d,
+            fmha_params.qo_indptr_h,
+            fmha_params.decode_page_indptr_h,
             fmha_params.page_indice_d,
-            fmha_params.kvlen_d,
+            fmha_params.kvlen_h,
             self.num_heads,
             self.kv_lora_rank,
             self.qk_rope_head_dim,

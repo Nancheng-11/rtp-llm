@@ -232,6 +232,7 @@ class MlaFlashInferDecodeImpl(FMHADecodeImplBase):
             self.seq_size_per_block,
         )
         self.fmha_impl.plan(self.fmha_params)
+        self.rope_params = self.fmha_params
 
     def forward(
         self,

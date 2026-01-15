@@ -10,7 +10,9 @@
 using namespace torch_ext;
 
 namespace rtp_llm {
-
+static const int MIN_CACHE_PAGE_NUM        = 1024 * 1024;
+static const int MIN_CACHE_BATCH_SIZE      = 256;
+static const int MIN_CACHE_INPUT_TOKEN_NUM = 512;
 std::tuple<torch::Tensor, std::vector<torch::Tensor>>
 FlashInferMlaAttnParams::allocateManyBuffer(const std::vector<std::vector<int64_t>>& shapes, bool is_device) {
     std::vector<torch::Tensor> tensors;
@@ -73,6 +75,10 @@ void FlashInferMlaAttnParams::ensureTensorSize(
     max_page_num_         = std::max(max_page_num_, page_num);
     max_reuse_page_num_   = std::max(max_reuse_page_num_, reuse_page_num);
     max_batch_reuse_info_ = std::max(max_batch_reuse_info_, batch_reuse_info_size);
+
+    max_batch_size_      = std::max(MIN_CACHE_BATCH_SIZE, max_batch_size_);
+    max_input_token_num_ = std::max(MIN_CACHE_INPUT_TOKEN_NUM, max_input_token_num_);
+    max_page_num_        = std::max(MIN_CACHE_PAGE_NUM, max_page_num_);
 
     // Allocate HOST buffer with all tensors in continuous memory
     auto alloc_ret_h = allocateManyBuffer({{max_input_token_num_},  // batch_indice
